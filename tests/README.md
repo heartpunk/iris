@@ -44,3 +44,9 @@ Each tier runs the same shape:
 - Cross-validation with OVH ttyrec tools (`ttyplay`, `ttytime`)
 - IPBT sanity + frame-count check (`ipbt-dump -T -H`)
 - Property roundtrip checks from `tests/Tests/Main.idr`
+
+## Iris-Rec Design Notes (Not Implemented)
+
+- U32 bounds contract for writer inputs (`clamp`/`wrap`/`reject`) is TBD.
+- Dedicated cross-tool verification suite against `ipbt-dump` output is tracked separately.
+- Explicit determinism assertion (`encodeFrames fs` stable across repeated evaluation) is tracked separately.

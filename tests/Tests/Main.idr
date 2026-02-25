@@ -1,12 +1,45 @@
 module Tests.Main
 
+import Data.Buffer
 import Iris.Core.Frame
 import Iris.Rec.Ttyrec.Write
 import Iris.Replay.Ttyrec.Parse
 import System
+import System.File.Buffer
 
 toByte : Integer -> Bits8
 toByte value = cast value
+
+byteToNat : Bits8 -> Nat
+byteToNat b = cast (the Integer (cast b))
+
+decodeU32LE4 : Bits8 -> Bits8 -> Bits8 -> Bits8 -> Nat
+decodeU32LE4 b0 b1 b2 b3 =
+  byteToNat b0
+    + (byteToNat b1 * 256)
+    + (byteToNat b2 * 65536)
+    + (byteToNat b3 * 16777216)
+
+decodeU32LE : List Bits8 -> Maybe Nat
+decodeU32LE [b0, b1, b2, b3] = Just (decodeU32LE4 b0 b1 b2 b3)
+decodeU32LE _ = Nothing
+
+parseEncodedFrames : List Frame -> Either ParseError (List Frame)
+parseEncodedFrames frames = parseBytes (encodeFrames frames)
+
+listTake : Nat -> List a -> List a
+listTake Z _ = []
+listTake (S k) [] = []
+listTake (S k) (x :: xs) = x :: listTake k xs
+
+listDrop : Nat -> List a -> List a
+listDrop Z xs = xs
+listDrop (S k) [] = []
+listDrop (S k) (_ :: xs) = listDrop k xs
+
+sumEncodedSize : List Frame -> Nat
+sumEncodedSize [] = 0
+sumEncodedSize (frame :: rest) = (12 + length (payload frame)) + sumEncodedSize rest
 
 sameFrame : Frame -> Frame -> Bool
 sameFrame lhs rhs =
@@ -107,6 +140,151 @@ frameCountForSeed seed =
   let s = nextSeed seed
    in cast ((s `mod` 6) + 1)
 
+propertyFrameCountSeed : Nat -> Bool
+propertyFrameCountSeed seedNat =
+  let seed = cast seedNat
+      frameCount = frameCountForSeed seed
+      (frames, _) = generateFrames frameCount seed
+   in case parseEncodedFrames frames of
+        Left _ => False
+        Right parsed => length parsed == length frames
+
+propertyU32RoundtripSeed : Nat -> Bool
+propertyU32RoundtripSeed seedNat =
+  let (value, _) = randomU32 (cast seedNat)
+   in decodeU32LE (encodeU32LE value) == Just value
+
+propertyOrderingSeed : Nat -> Bool
+propertyOrderingSeed seedNat =
+  let seed = cast seedNat
+      frameCount = frameCountForSeed seed
+      (frames, _) = generateFrames frameCount seed
+   in case parseEncodedFrames frames of
+        Left _ => False
+        Right parsed => sameFrames frames parsed
+
+validatePayloadLens : List Frame -> List Bits8 -> Bool
+validatePayloadLens [] [] = True
+validatePayloadLens [] _ = False
+validatePayloadLens (_ :: _) [] = False
+validatePayloadLens (frame :: restFrames) bytes =
+  case bytes of
+    _ :: _ :: _ :: _ :: _ :: _ :: _ :: _ :: l0 :: l1 :: l2 :: l3 :: restBytes =>
+      let expectedLen = length (payload frame)
+          headerLen = decodeU32LE4 l0 l1 l2 l3
+          payloadPart = listTake headerLen restBytes
+       in headerLen == expectedLen
+            && length payloadPart == headerLen
+            && validatePayloadLens restFrames (listDrop headerLen restBytes)
+    _ => False
+
+propertyPayloadLenMatchesHeaderSeed : Nat -> Bool
+propertyPayloadLenMatchesHeaderSeed seedNat =
+  let seed = cast seedNat
+      frameCount = frameCountForSeed seed
+      (frames, _) = generateFrames frameCount seed
+      bytes = encodeFrames frames
+   in validatePayloadLens frames bytes
+
+validateHeaderBytes : List Frame -> List Bits8 -> Bool
+validateHeaderBytes [] [] = True
+validateHeaderBytes [] _ = False
+validateHeaderBytes (_ :: _) [] = False
+validateHeaderBytes (frame :: restFrames) bytes =
+  case bytes of
+    s0 :: s1 :: s2 :: s3 :: u0 :: u1 :: u2 :: u3 :: l0 :: l1 :: l2 :: l3 :: restBytes =>
+      let secBytes = [s0, s1, s2, s3]
+          usecBytes = [u0, u1, u2, u3]
+          lenBytes = [l0, l1, l2, l3]
+          expectedLen = length (payload frame)
+          payloadPart = listTake expectedLen restBytes
+       in secBytes == encodeU32LE (sec frame)
+            && usecBytes == encodeU32LE (usec frame)
+            && lenBytes == encodeU32LE expectedLen
+            && length payloadPart == expectedLen
+            && validateHeaderBytes restFrames (listDrop expectedLen restBytes)
+    _ => False
+
+propertyHeaderBytesSeed : Nat -> Bool
+propertyHeaderBytesSeed seedNat =
+  let seed = cast seedNat
+      frameCount = frameCountForSeed seed
+      (frames, _) = generateFrames frameCount seed
+      bytes = encodeFrames frames
+   in validateHeaderBytes frames bytes
+
+propertySizeLawSeed : Nat -> Bool
+propertySizeLawSeed seedNat =
+  let seed = cast seedNat
+      frameCount = frameCountForSeed seed
+      (frames, _) = generateFrames frameCount seed
+      bytes = encodeFrames frames
+   in length bytes == sumEncodedSize frames
+
+propertyConcatLawSeed : Nat -> Bool
+propertyConcatLawSeed seedNat =
+  let seedA = cast seedNat
+      seedB = cast (S seedNat)
+      countA = frameCountForSeed seedA
+      countB = frameCountForSeed seedB
+      (framesA, _) = generateFrames countA seedA
+      (framesB, _) = generateFrames countB seedB
+   in encodeFrames (framesA ++ framesB) == (encodeFrames framesA ++ encodeFrames framesB)
+
+allBytesFrom : Integer -> List Bits8
+allBytesFrom n =
+  if n >= 256
+    then []
+    else toByte n :: allBytesFrom (n + 1)
+
+allByteValues : List Bits8
+allByteValues = allBytesFrom 0
+
+propertyBinaryTransparencyAllBytes : Bool
+propertyBinaryTransparencyAllBytes =
+  let frame = MkFrame 77 12 allByteValues
+   in case parseEncodedFrames [frame] of
+        Left _ => False
+        Right [parsed] => payload parsed == allByteValues
+        Right _ => False
+
+readBufferBytes : Buffer -> Int -> IO (List Bits8)
+readBufferBytes buffer size = go 0 []
+  where
+    go : Int -> List Bits8 -> IO (List Bits8)
+    go index acc =
+      if index >= size
+        then pure (reverse acc)
+        else do
+          byte <- getBits8 buffer index
+          go (index + 1) (byte :: acc)
+
+readFileBytes : String -> IO (Either String (List Bits8))
+readFileBytes path = do
+  loaded <- createBufferFromFile path
+  case loaded of
+    Left err => pure (Left ("failed to read file bytes: " ++ show err))
+    Right buffer => do
+      size <- rawSize buffer
+      bytes <- readBufferBytes buffer size
+      pure (Right bytes)
+
+propertyWriteFidelity : IO Bool
+propertyWriteFidelity = do
+  let frames =
+        [ MkFrame 3 1 allByteValues
+        , MkFrame 3 2 [toByte 0, toByte 1, toByte 2, toByte 3]
+        ]
+  let expected = encodeFrames frames
+  wrote <- writeTtyrec "/tmp/iris-rec-write-fidelity.ttyrec" frames
+  case wrote of
+    Left _ => pure False
+    Right () => do
+      onDisk <- readFileBytes "/tmp/iris-rec-write-fidelity.ttyrec"
+      case onDisk of
+        Left _ => pure False
+        Right bytes => pure (bytes == expected)
+
 propertyRoundtripSeed : Nat -> Bool
 propertyRoundtripSeed seedNat =
   let seed = cast seedNat
@@ -115,10 +293,12 @@ propertyRoundtripSeed seedNat =
       bytes = encodeFrames frames
    in parsedFramesEqual frames (parseBytes bytes)
 
+propertyMany : (Nat -> Bool) -> Nat -> Bool
+propertyMany prop Z = prop 0
+propertyMany prop (S k) = prop (S k) && propertyMany prop k
+
 propertyRoundtripMany : Nat -> Bool
-propertyRoundtripMany Z = propertyRoundtripSeed 0
-propertyRoundtripMany (S k) =
-  propertyRoundtripSeed (S k) && propertyRoundtripMany k
+propertyRoundtripMany rounds = propertyMany propertyRoundtripSeed rounds
 
 timestampLE : Frame -> Frame -> Bool
 timestampLE lhs rhs =
@@ -185,13 +365,50 @@ normalizeArgs all@(arg0 :: rest) =
     then all
     else rest
 
+runPropertySuite : Nat -> IO Nat
+runPropertySuite rounds = do
+  let limit = roundsToSeedLimit rounds
+  frameCount <- runPure
+                  ("property/frame-count-preservation-" ++ show rounds ++ "-seeds")
+                  (propertyMany propertyFrameCountSeed limit)
+  leRoundtrip <- runPure
+                   ("property/le-u32-roundtrip-" ++ show rounds ++ "-seeds")
+                   (propertyMany propertyU32RoundtripSeed limit)
+  ordering <- runPure
+                ("property/order-preservation-" ++ show rounds ++ "-seeds")
+                (propertyMany propertyOrderingSeed limit)
+  payloadLen <- runPure
+                  ("property/payload-len-matches-header-" ++ show rounds ++ "-seeds")
+                  (propertyMany propertyPayloadLenMatchesHeaderSeed limit)
+  headerBytes <- runPure
+                   ("property/header-byte-spotcheck-" ++ show rounds ++ "-seeds")
+                   (propertyMany propertyHeaderBytesSeed limit)
+  sizeLaw <- runPure
+               ("property/size-law-" ++ show rounds ++ "-seeds")
+               (propertyMany propertySizeLawSeed limit)
+  concatLaw <- runPure
+                 ("property/concat-law-" ++ show rounds ++ "-seeds")
+                 (propertyMany propertyConcatLawSeed limit)
+  binaryTransparency <- runPure
+                          "property/binary-transparency-all-bytes"
+                          propertyBinaryTransparencyAllBytes
+  writeFidelity <- runIO
+                     "property/write-fidelity-disk-vs-encode"
+                     propertyWriteFidelity
+
+  pure
+    (frameCount + leRoundtrip + ordering + payloadLen + headerBytes
+      + sizeLaw + concatLaw + binaryTransparency + writeFidelity)
+
 runPropertyOnly : Nat -> IO ()
 runPropertyOnly rounds = do
-  prop <- runPure
-            ("property/roundtrip-iris-rec-replay-" ++ show rounds ++ "-seeds")
-            (propertyRoundtripMany (roundsToSeedLimit rounds))
-  putStrLn ("failures: " ++ show prop)
-  if prop == 0
+  roundtrip <- runPure
+                 ("property/roundtrip-iris-rec-replay-" ++ show rounds ++ "-seeds")
+                 (propertyRoundtripMany (roundsToSeedLimit rounds))
+  other <- runPropertySuite rounds
+  let failures = roundtrip + other
+  putStrLn ("failures: " ++ show failures)
+  if failures == 0
     then pure ()
     else exitWith (ExitFailure 1)
 
@@ -203,13 +420,14 @@ runDefaultSuite = do
   unit4 <- runPure "unit/truncated-header" unitTruncatedHeader
   unit5 <- runPure "unit/truncated-payload" unitTruncatedPayload
   unit6 <- runPure "unit/multi-frame" unitMultiFrame
-  prop <- runPure "property/roundtrip-iris-rec-replay-200-seeds" (propertyRoundtripMany 199)
+  roundtrip <- runPure "property/roundtrip-iris-rec-replay-200-seeds" (propertyRoundtripMany 199)
+  prop <- runPropertySuite 200
   writeRoundtrip <- runIO "roundtrip/write-file-then-parse" writerRoundtripFile
   integ <- runIO "integration/fixture-parse" integrationRealFile
 
   let failures =
         unit1 + unit2 + unit3 + unit4 + unit5 + unit6
-          + prop + writeRoundtrip + integ
+          + roundtrip + prop + writeRoundtrip + integ
   putStrLn ("failures: " ++ show failures)
 
   if failures == 0
