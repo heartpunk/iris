@@ -7,7 +7,7 @@ IRIS_REPLAY_BIN="${IRIS_REPLAY_BIN:-$ROOT_DIR/iris-replay/build/exec/iris-replay
 
 usage() {
   cat <<'EOF'
-Usage: tests/cli-regressions.sh [--test replay-byte-safety|record-byte-safety|record-timestamps|search-output|info-output|raw-byte-roundtrip|exit-codes|help-flags]
+Usage: tests/cli-regressions.sh [--test replay-byte-safety|record-byte-safety|record-timestamps|search-output|search-zero-matches|info-output|raw-byte-roundtrip|exit-codes|help-flags]
 EOF
 }
 
@@ -259,6 +259,44 @@ run_search_output() {
   return 0
 }
 
+run_search_zero_matches() {
+  local tmp_dir="$1"
+  local payload_file="$tmp_dir/search-zero-payload.txt"
+  local ttyrec_file="$tmp_dir/search-zero-input.ttyrec"
+  local output_file="$tmp_dir/search-zero-output.txt"
+  local line_count
+
+  printf 'hello world\n' > "$payload_file"
+  make_single_frame_ttyrec "$payload_file" "$ttyrec_file" 21 42
+
+  set +e
+  "$IRIS_REPLAY_BIN" search "$ttyrec_file" "xyzzy" > "$output_file" 2>&1
+  local status=$?
+  set -e
+
+  if [[ "$status" -ne 0 ]]; then
+    echo "FAIL search-zero-matches command exited with $status"
+    cat "$output_file"
+    return 1
+  fi
+
+  if ! grep -qx "matches: 0" "$output_file"; then
+    echo "FAIL search-zero-matches expected exact matches: 0 line"
+    cat "$output_file"
+    return 1
+  fi
+
+  line_count="$(wc -l < "$output_file" | tr -d ' ')"
+  if [[ "$line_count" -ne 1 ]]; then
+    echo "FAIL search-zero-matches expected no additional match lines"
+    cat "$output_file"
+    return 1
+  fi
+
+  echo "PASS search-zero-matches"
+  return 0
+}
+
 run_info_output() {
   local tmp_dir="$1"
   local payload0="$tmp_dir/info-payload-0.txt"
@@ -419,6 +457,7 @@ main() {
       run_record_byte_safety "$tmp_dir" || failures=$((failures + 1))
       run_record_timestamps "$tmp_dir" || failures=$((failures + 1))
       run_search_output "$tmp_dir" || failures=$((failures + 1))
+      run_search_zero_matches "$tmp_dir" || failures=$((failures + 1))
       run_info_output "$tmp_dir" || failures=$((failures + 1))
       run_raw_byte_roundtrip "$tmp_dir" || failures=$((failures + 1))
       run_exit_codes "$tmp_dir" || failures=$((failures + 1))
@@ -435,6 +474,9 @@ main() {
       ;;
     "search-output")
       run_search_output "$tmp_dir" || failures=$((failures + 1))
+      ;;
+    "search-zero-matches")
+      run_search_zero_matches "$tmp_dir" || failures=$((failures + 1))
       ;;
     "info-output")
       run_info_output "$tmp_dir" || failures=$((failures + 1))
