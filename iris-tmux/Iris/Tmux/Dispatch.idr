@@ -15,6 +15,7 @@ escapeSingleQuoted (ch :: rest) = strCons ch "" ++ escapeSingleQuoted rest
 quoteArg : String -> String
 quoteArg arg = "'" ++ escapeSingleQuoted (unpack arg) ++ "'"
 
+export
 runTmux : List String -> IO (Either String String)
 runTmux args = do
   let command = unwords (map quoteArg ("tmux" :: args))
@@ -30,3 +31,11 @@ runTmux args = do
           if exitCode == 0
             then pure (Right stdout)
             else pure (Left ("tmux exited with code " ++ show exitCode ++ ": " ++ stdout))
+
+public export
+tmuxNewSession : (name : String) -> IO (Either String ())
+tmuxNewSession name = do
+  result <- runTmux ["new-session", "-d", "-s", name]
+  case result of
+    Left err => pure (Left err)
+    Right _ => pure (Right ())
