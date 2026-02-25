@@ -24,8 +24,17 @@ decodeU32LE : List Bits8 -> Maybe Nat
 decodeU32LE [b0, b1, b2, b3] = Just (decodeU32LE4 b0 b1 b2 b3)
 decodeU32LE _ = Nothing
 
+parseEncodedFrame : Frame -> Either ParseError (List Frame)
+parseEncodedFrame frame =
+  case encodeFrame frame of
+    Left err => Left (MkParseError 0 err)
+    Right bytes => parseBytes bytes
+
 parseEncodedFrames : List Frame -> Either ParseError (List Frame)
-parseEncodedFrames frames = parseBytes (encodeFrames frames)
+parseEncodedFrames frames =
+  case encodeFrames frames of
+    Left err => Left (MkParseError 0 err)
+    Right bytes => parseBytes bytes
 
 listTake : Nat -> List a -> List a
 listTake Z _ = []
@@ -63,18 +72,18 @@ isParseErrorAt _ _ = False
 unitFixedFrame : Bool
 unitFixedFrame =
   let frame = MkFrame 1 123 [toByte 65, toByte 66, toByte 67]
-   in parsedFramesEqual [frame] (parseBytes (encodeFrame frame))
+   in parsedFramesEqual [frame] (parseEncodedFrame frame)
 
 unitEmptyPayload : Bool
 unitEmptyPayload =
   let frame = MkFrame 7 900 []
-   in parsedFramesEqual [frame] (parseBytes (encodeFrame frame))
+   in parsedFramesEqual [frame] (parseEncodedFrame frame)
 
 unitMaxU32Fields : Bool
 unitMaxU32Fields =
   let maxU32 = 4294967295
       frame = MkFrame maxU32 maxU32 []
-   in parsedFramesEqual [frame] (parseBytes (encodeFrame frame))
+   in parsedFramesEqual [frame] (parseEncodedFrame frame)
 
 unitTruncatedHeader : Bool
 unitTruncatedHeader =
@@ -82,19 +91,24 @@ unitTruncatedHeader =
 
 unitTruncatedPayload : Bool
 unitTruncatedPayload =
-  let bytes =
-        encodeU32LE 10
-          ++ encodeU32LE 20
-          ++ encodeU32LE 4
-          ++ [toByte 65, toByte 66]
-   in isParseErrorAt 0 (parseBytes bytes)
+  case (do
+    secBytes <- encodeU32LE 10
+    usecBytes <- encodeU32LE 20
+    lenBytes <- encodeU32LE 4
+    pure (secBytes ++ usecBytes ++ lenBytes ++ [toByte 65, toByte 66])) of
+    Left _ => False
+    Right bytes => isParseErrorAt 0 (parseBytes bytes)
 
 unitMultiFrame : Bool
 unitMultiFrame =
   let frame1 = MkFrame 1 10 [toByte 72, toByte 105]
-      frame2 = MkFrame 2 20 [toByte 10]
-      bytes = encodeFrame frame1 ++ encodeFrame frame2
-   in parsedFramesEqual [frame1, frame2] (parseBytes bytes)
+      frame2 = MkFrame 2 20 [toByte 10] in
+    case (do
+      bytes1 <- encodeFrame frame1
+      bytes2 <- encodeFrame frame2
+      pure (bytes1 ++ bytes2)) of
+      Left _ => False
+      Right bytes => parsedFramesEqual [frame1, frame2] (parseBytes bytes)
 
 lcgModulus : Integer
 lcgModulus = 4294967296
@@ -152,7 +166,16 @@ propertyFrameCountSeed seedNat =
 propertyU32RoundtripSeed : Nat -> Bool
 propertyU32RoundtripSeed seedNat =
   let (value, _) = randomU32 (cast seedNat)
-   in decodeU32LE (encodeU32LE value) == Just value
+   in case encodeU32LE value of
+        Left _ => False
+        Right encoded => decodeU32LE encoded == Just value
+
+propertyU32OutOfRangeSeed : Nat -> Bool
+propertyU32OutOfRangeSeed seedNat =
+  let overflowValue = 4294967296 + seedNat
+   in case encodeU32LE overflowValue of
+        Left _ => True
+        Right _ => False
 
 propertyOrderingSeed : Nat -> Bool
 propertyOrderingSeed seedNat =
@@ -182,9 +205,10 @@ propertyPayloadLenMatchesHeaderSeed : Nat -> Bool
 propertyPayloadLenMatchesHeaderSeed seedNat =
   let seed = cast seedNat
       frameCount = frameCountForSeed seed
-      (frames, _) = generateFrames frameCount seed
-      bytes = encodeFrames frames
-   in validatePayloadLens frames bytes
+      (frames, _) = generateFrames frameCount seed in
+    case encodeFrames frames of
+      Left _ => False
+      Right bytes => validatePayloadLens frames bytes
 
 validateHeaderBytes : List Frame -> List Bits8 -> Bool
 validateHeaderBytes [] [] = True
@@ -197,29 +221,34 @@ validateHeaderBytes (frame :: restFrames) bytes =
           usecBytes = [u0, u1, u2, u3]
           lenBytes = [l0, l1, l2, l3]
           expectedLen = length (payload frame)
-          payloadPart = listTake expectedLen restBytes
-       in secBytes == encodeU32LE (sec frame)
-            && usecBytes == encodeU32LE (usec frame)
-            && lenBytes == encodeU32LE expectedLen
-            && length payloadPart == expectedLen
-            && validateHeaderBytes restFrames (listDrop expectedLen restBytes)
+          payloadPart = listTake expectedLen restBytes in
+        case (encodeU32LE (sec frame), encodeU32LE (usec frame), encodeU32LE expectedLen) of
+          (Right expectedSec, Right expectedUsec, Right expectedLenBytes) =>
+            secBytes == expectedSec
+              && usecBytes == expectedUsec
+              && lenBytes == expectedLenBytes
+              && length payloadPart == expectedLen
+              && validateHeaderBytes restFrames (listDrop expectedLen restBytes)
+          _ => False
     _ => False
 
 propertyHeaderBytesSeed : Nat -> Bool
 propertyHeaderBytesSeed seedNat =
   let seed = cast seedNat
       frameCount = frameCountForSeed seed
-      (frames, _) = generateFrames frameCount seed
-      bytes = encodeFrames frames
-   in validateHeaderBytes frames bytes
+      (frames, _) = generateFrames frameCount seed in
+    case encodeFrames frames of
+      Left _ => False
+      Right bytes => validateHeaderBytes frames bytes
 
 propertySizeLawSeed : Nat -> Bool
 propertySizeLawSeed seedNat =
   let seed = cast seedNat
       frameCount = frameCountForSeed seed
-      (frames, _) = generateFrames frameCount seed
-      bytes = encodeFrames frames
-   in length bytes == sumEncodedSize frames
+      (frames, _) = generateFrames frameCount seed in
+    case encodeFrames frames of
+      Left _ => False
+      Right bytes => length bytes == sumEncodedSize frames
 
 propertyConcatLawSeed : Nat -> Bool
 propertyConcatLawSeed seedNat =
@@ -228,8 +257,10 @@ propertyConcatLawSeed seedNat =
       countA = frameCountForSeed seedA
       countB = frameCountForSeed seedB
       (framesA, _) = generateFrames countA seedA
-      (framesB, _) = generateFrames countB seedB
-   in encodeFrames (framesA ++ framesB) == (encodeFrames framesA ++ encodeFrames framesB)
+      (framesB, _) = generateFrames countB seedB in
+    case (encodeFrames (framesA ++ framesB), encodeFrames framesA, encodeFrames framesB) of
+      (Right allBytes, Right bytesA, Right bytesB) => allBytes == (bytesA ++ bytesB)
+      _ => False
 
 allBytesFrom : Integer -> List Bits8
 allBytesFrom n =
@@ -275,23 +306,26 @@ propertyWriteFidelity = do
         [ MkFrame 3 1 allByteValues
         , MkFrame 3 2 [toByte 0, toByte 1, toByte 2, toByte 3]
         ]
-  let expected = encodeFrames frames
-  wrote <- writeTtyrec "/tmp/iris-rec-write-fidelity.ttyrec" frames
-  case wrote of
+  case encodeFrames frames of
     Left _ => pure False
-    Right () => do
-      onDisk <- readFileBytes "/tmp/iris-rec-write-fidelity.ttyrec"
-      case onDisk of
+    Right expected => do
+      wrote <- writeTtyrec "/tmp/iris-rec-write-fidelity.ttyrec" frames
+      case wrote of
         Left _ => pure False
-        Right bytes => pure (bytes == expected)
+        Right () => do
+          onDisk <- readFileBytes "/tmp/iris-rec-write-fidelity.ttyrec"
+          case onDisk of
+            Left _ => pure False
+            Right bytes => pure (bytes == expected)
 
 propertyRoundtripSeed : Nat -> Bool
 propertyRoundtripSeed seedNat =
   let seed = cast seedNat
       frameCount = frameCountForSeed seed
-      (frames, _) = generateFrames frameCount seed
-      bytes = encodeFrames frames
-   in parsedFramesEqual frames (parseBytes bytes)
+      (frames, _) = generateFrames frameCount seed in
+    case encodeFrames frames of
+      Left _ => False
+      Right bytes => parsedFramesEqual frames (parseBytes bytes)
 
 propertyMany : (Nat -> Bool) -> Nat -> Bool
 propertyMany prop Z = prop 0
@@ -374,6 +408,9 @@ runPropertySuite rounds = do
   leRoundtrip <- runPure
                    ("property/le-u32-roundtrip-" ++ show rounds ++ "-seeds")
                    (propertyMany propertyU32RoundtripSeed limit)
+  leOutOfRange <- runPure
+                    ("property/le-u32-out-of-range-rejected-" ++ show rounds ++ "-seeds")
+                    (propertyMany propertyU32OutOfRangeSeed limit)
   ordering <- runPure
                 ("property/order-preservation-" ++ show rounds ++ "-seeds")
                 (propertyMany propertyOrderingSeed limit)
@@ -397,7 +434,7 @@ runPropertySuite rounds = do
                      propertyWriteFidelity
 
   pure
-    (frameCount + leRoundtrip + ordering + payloadLen + headerBytes
+    (frameCount + leRoundtrip + leOutOfRange + ordering + payloadLen + headerBytes
       + sizeLaw + concatLaw + binaryTransparency + writeFidelity)
 
 runPropertyOnly : Nat -> IO ()
