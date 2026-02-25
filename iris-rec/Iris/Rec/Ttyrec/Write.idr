@@ -58,7 +58,3 @@ writeTtyrec path frames = do
       case wrote of
         Left ferr => pure (Left ("failed to write ttyrec file: " ++ show ferr))
         Right () => pure (Right ())
-
-public export
-stringToBytes : String -> List Bits8
-stringToBytes text = map (\ch => toByte (cast (the Int (cast ch)))) (unpack text)
