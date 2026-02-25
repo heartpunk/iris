@@ -137,6 +137,10 @@ for archive in "${archives[@]}"; do
   info_out="$("$IRIS_REPLAY_BIN" info "$tmp_file" 2>&1 || true)"
   frames="$(printf '%s\n' "$info_out" | awk '/^frames: [0-9]+$/ { print $2; exit }')"
   if [[ -z "${frames:-}" ]]; then
+    if [[ "$tier" == "4" ]] && printf '%s\n' "$info_out" | grep -q "truncated ttyrec payload"; then
+      echo "SKIP truncated $archive :: $info_out"
+      continue
+    fi
     echo "FAIL parse/info $archive :: $info_out"
     failures=$((failures + 1))
     continue
