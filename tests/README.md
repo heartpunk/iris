@@ -14,4 +14,33 @@ Feature parity = same outputs for same inputs, verified via `iris-rec diff`.
 
 ## Running Tests
 
-TBD — depends on pack test setup.
+Build test binaries:
+
+```sh
+idris2 --build iris-core/iris-core.ipkg
+idris2 --build iris-replay/iris-replay.ipkg
+idris2 --build tests/tests.ipkg
+```
+
+Run tiered suites (default `--tier 1`):
+
+```sh
+tests/run-tier.sh
+tests/run-tier.sh --tier 2
+tests/run-tier.sh --tier 3
+tests/run-tier.sh --tier 4
+```
+
+Tier matrix:
+
+- Tier 1: 5 real `~/.ttyrec/*.lz` files, `N=10` property rounds, target under 1s
+- Tier 2: 20 files, `N=50`, target under 10s
+- Tier 3: 100 files, `N=200`, target under 60s
+- Tier 4: all files (expected 1550), `N=1000`, occasional full sweep
+
+Each tier runs the same shape:
+
+- Real file parsing via `iris-replay info`
+- Cross-validation with OVH ttyrec tools (`ttyplay`, `ttytime`)
+- IPBT sanity + frame-count check (`ipbt-dump -T -H`)
+- Property roundtrip checks from `tests/Tests/Main.idr`

@@ -22,6 +22,8 @@
           default = pkgs.mkShell {
             packages = [
               pkgs.idris2
+              pkgs."ovh-ttyrec"
+              pkgs.ipbt
             ];
           };
         });

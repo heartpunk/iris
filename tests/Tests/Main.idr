@@ -167,9 +167,36 @@ runIO name action = do
   passed <- action
   runPure name passed
 
-public export
-main : IO ()
-main = do
+roundsToSeedLimit : Nat -> Nat
+roundsToSeedLimit Z = Z
+roundsToSeedLimit (S k) = k
+
+parsePropertyRounds : String -> Maybe Nat
+parsePropertyRounds "10" = Just 10
+parsePropertyRounds "50" = Just 50
+parsePropertyRounds "200" = Just 200
+parsePropertyRounds "1000" = Just 1000
+parsePropertyRounds _ = Nothing
+
+normalizeArgs : List String -> List String
+normalizeArgs [] = []
+normalizeArgs all@(arg0 :: rest) =
+  if arg0 == "property-roundtrip"
+    then all
+    else rest
+
+runPropertyOnly : Nat -> IO ()
+runPropertyOnly rounds = do
+  prop <- runPure
+            ("property/roundtrip-" ++ show rounds ++ "-seeds")
+            (propertyRoundtripMany (roundsToSeedLimit rounds))
+  putStrLn ("failures: " ++ show prop)
+  if prop == 0
+    then pure ()
+    else exitWith (ExitFailure 1)
+
+runDefaultSuite : IO ()
+runDefaultSuite = do
   unit1 <- runPure "unit/fixed-frame" unitFixedFrame
   unit2 <- runPure "unit/empty-payload" unitEmptyPayload
   unit3 <- runPure "unit/max-u32-fields" unitMaxU32Fields
@@ -185,3 +212,17 @@ main = do
   if failures == 0
     then pure ()
     else exitWith (ExitFailure 1)
+
+public export
+main : IO ()
+main = do
+  rawArgs <- getArgs
+  let args = normalizeArgs rawArgs
+  case args of
+    ["property-roundtrip", roundsRaw] =>
+      case parsePropertyRounds roundsRaw of
+        Just rounds => runPropertyOnly rounds
+        Nothing => do
+          putStrLn "supported property rounds: 10, 50, 200, 1000"
+          exitWith (ExitFailure 1)
+    _ => runDefaultSuite
