@@ -98,7 +98,7 @@ runReplay : String -> IO ()
 runReplay path = do
   result <- replayFile path
   case result of
-    Left err => exitWithMessage (formatParseError err)
+    Left err => exitWithMessage err
     Right () => pure ()
 
 runSearch : String -> String -> IO ()
