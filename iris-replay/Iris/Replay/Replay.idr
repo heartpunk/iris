@@ -29,14 +29,21 @@ writePayload bytes = do
         Left err => pure (Left ("failed to write replay output: " ++ show err))
         Right () => pure (Right ())
 
+prependBytes : List Bits8 -> List Bits8 -> List Bits8
+prependBytes [] acc = acc
+prependBytes (byte :: rest) acc = prependBytes rest (byte :: acc)
+
+collectPayloadsReversed : List Frame -> List Bits8 -> List Bits8
+collectPayloadsReversed [] acc = acc
+collectPayloadsReversed (frame :: rest) acc =
+  collectPayloadsReversed rest (prependBytes (payload frame) acc)
+
+collectPayloads : List Frame -> List Bits8
+collectPayloads frames = reverse (collectPayloadsReversed frames [])
+
 public export
 replayUntimed : List Frame -> IO (Either String ())
-replayUntimed [] = pure (Right ())
-replayUntimed (frame :: rest) = do
-  wrote <- writePayload (payload frame)
-  case wrote of
-    Left err => pure (Left err)
-    Right () => replayUntimed rest
+replayUntimed frames = writePayload (collectPayloads frames)
 
 public export
 replayFile : String -> IO (Either String ())
