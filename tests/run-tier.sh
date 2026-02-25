@@ -119,6 +119,20 @@ if [[ "$tier" == "4" && ${#archives[@]} -ne 1550 ]]; then
   echo "tier 4 note: expected 1550 files, found ${#archives[@]}" >&2
 fi
 
+# Dedicated temp dir — isolates our files from other /tmp users
+TIER_TMPDIR="$(mktemp -d "/tmp/iris-tier-${tier}.XXXXXX")"
+
+# Layer 1: trap cleans up on any exit (success, failure, signal)
+cleanup() {
+  rm -rf "$TIER_TMPDIR"
+}
+trap cleanup EXIT
+
+# Layer 2: clean up stale runs from previous invocations
+for stale in /tmp/iris-tier-*.??????; do
+  [[ -d "$stale" ]] && [[ "$stale" != "$TIER_TMPDIR" ]] && rm -rf "$stale"
+done
+
 echo "tier=$tier files=${#archives[@]} property_rounds=$property_rounds budget=${budget_seconds}s"
 
 failures=0
@@ -126,10 +140,11 @@ start_seconds=$SECONDS
 
 for archive in "${archives[@]}"; do
   base="$(basename "$archive" .lz)"
-  tmp_file="/tmp/${base}.ttyrec"
+  tmp_file="${TIER_TMPDIR}/${base}.ttyrec"
 
   if ! lzip -d -c "$archive" > "$tmp_file"; then
     echo "FAIL parse/decompress $archive"
+    rm -f "$tmp_file"
     failures=$((failures + 1))
     continue
   fi
@@ -139,27 +154,32 @@ for archive in "${archives[@]}"; do
   if [[ -z "${frames:-}" ]]; then
     if [[ "$tier" == "4" ]] && printf '%s\n' "$info_out" | grep -q "truncated ttyrec payload"; then
       echo "SKIP truncated $archive :: $info_out"
+      rm -f "$tmp_file"
       continue
     fi
     echo "FAIL parse/info $archive :: $info_out"
+    rm -f "$tmp_file"
     failures=$((failures + 1))
     continue
   fi
 
   if (( frames <= 0 )); then
     echo "FAIL parse/non-empty $archive :: frames=$frames"
+    rm -f "$tmp_file"
     failures=$((failures + 1))
     continue
   fi
 
   if ! ttyplay -n "$tmp_file" >/dev/null 2>&1; then
     echo "FAIL ovh/ttyplay $archive"
+    rm -f "$tmp_file"
     failures=$((failures + 1))
     continue
   fi
 
   if ! ttytime "$tmp_file" >/dev/null 2>&1; then
     echo "FAIL ovh/ttytime $archive"
+    rm -f "$tmp_file"
     failures=$((failures + 1))
     continue
   fi
@@ -167,15 +187,20 @@ for archive in "${archives[@]}"; do
   ipbt_count="$(ipbt-dump -T -H "$tmp_file" 2>/dev/null | awk -F: '/:offset / { c += 1 } END { print c + 0 }')"
   if [[ -z "${ipbt_count:-}" ]]; then
     echo "FAIL ipbt/empty $archive"
+    rm -f "$tmp_file"
     failures=$((failures + 1))
     continue
   fi
 
   if (( ipbt_count != frames )); then
     echo "FAIL cross-validate $archive :: iris=$frames ipbt=$ipbt_count"
+    rm -f "$tmp_file"
     failures=$((failures + 1))
     continue
   fi
+
+  # Layer 3: delete each file immediately after processing
+  rm -f "$tmp_file"
 done
 
 if ! "$IRIS_TESTS_BIN" property-roundtrip "$property_rounds"; then
