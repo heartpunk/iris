@@ -1,0 +1,15 @@
+package iris-tmux-tests
+
+authors    = "heartpunk"
+brief      = "Integration scaffold tests for iris-tmux Dispatch"
+version    = 0.1.0
+
+depends    = base
+           , iris-tmux
+
+sourcedir  = "."
+
+modules    = Tmux.Main
+
+main       = Tmux.Main
+executable = "iris-tmux-tests"
