@@ -1,0 +1,4 @@
+.idris2/
+iris-core/build/
+iris-replay/build/
+**/build/
