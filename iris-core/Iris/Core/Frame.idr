@@ -7,4 +7,4 @@ record Frame where
   constructor MkFrame
   sec     : Nat
   usec    : Nat
-  payload : String
+  payload : List Bits8

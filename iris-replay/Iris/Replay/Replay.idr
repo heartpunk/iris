@@ -6,9 +6,7 @@ import Iris.Replay.Ttyrec.Parse
 public export
 replayUntimed : List Frame -> IO ()
 replayUntimed [] = pure ()
-replayUntimed (frame :: rest) = do
-  putStr (payload frame)
-  replayUntimed rest
+replayUntimed (_ :: rest) = replayUntimed rest
 
 public export
 replayFile : String -> IO (Either ParseError ())
