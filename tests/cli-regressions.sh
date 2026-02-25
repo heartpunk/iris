@@ -7,7 +7,7 @@ IRIS_REPLAY_BIN="${IRIS_REPLAY_BIN:-$ROOT_DIR/iris-replay/build/exec/iris-replay
 
 usage() {
   cat <<'EOF'
-Usage: tests/cli-regressions.sh [--test raw-byte-roundtrip|exit-codes]
+Usage: tests/cli-regressions.sh [--test replay-byte-safety|raw-byte-roundtrip|exit-codes]
 EOF
 }
 
@@ -104,6 +104,31 @@ run_raw_byte_roundtrip() {
   return 1
 }
 
+run_replay_byte_safety() {
+  local tmp_dir="$1"
+  local payload_file="$tmp_dir/replay-input.bin"
+  local ttyrec_file="$tmp_dir/replay-single-frame.ttyrec"
+  local replay_file="$tmp_dir/replay-output.bin"
+
+  # Deliberately include non-ASCII bytes and NUL.
+  printf '\200\377\000A\177\n' > "$payload_file"
+  make_single_frame_ttyrec "$payload_file" "$ttyrec_file" 17 420
+
+  "$IRIS_REPLAY_BIN" replay "$ttyrec_file" > "$replay_file"
+
+  if cmp -s "$payload_file" "$replay_file"; then
+    echo "PASS replay-byte-safety"
+    return 0
+  fi
+
+  echo "FAIL replay-byte-safety"
+  echo "expected:"
+  xxd -g 1 "$payload_file"
+  echo "actual:"
+  xxd -g 1 "$replay_file"
+  return 1
+}
+
 run_exit_codes() {
   local tmp_dir="$1"
   local failures=0
@@ -133,7 +158,6 @@ run_exit_codes() {
 }
 
 main() {
-  local tmp_dir
   tmp_dir="$(mktemp -d /tmp/iris-cli-regressions.XXXXXX)"
   trap 'rm -rf "$tmp_dir"' EXIT
 
@@ -141,8 +165,12 @@ main() {
 
   case "$selected_test" in
     "")
+      run_replay_byte_safety "$tmp_dir" || failures=$((failures + 1))
       run_raw_byte_roundtrip "$tmp_dir" || failures=$((failures + 1))
       run_exit_codes "$tmp_dir" || failures=$((failures + 1))
+      ;;
+    "replay-byte-safety")
+      run_replay_byte_safety "$tmp_dir" || failures=$((failures + 1))
       ;;
     "raw-byte-roundtrip")
       run_raw_byte_roundtrip "$tmp_dir" || failures=$((failures + 1))

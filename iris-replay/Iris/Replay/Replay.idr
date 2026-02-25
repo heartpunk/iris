@@ -1,19 +1,32 @@
 module Iris.Replay.Replay
 
+import Data.Buffer
 import Iris.Core.Frame
 import Iris.Replay.Ttyrec.Parse
+import System.File
 
-byteToChar : Bits8 -> Char
-byteToChar b = chr (cast (the Integer (cast b)))
+fillBuffer : Buffer -> Int -> List Bits8 -> IO ()
+fillBuffer _ _ [] = pure ()
+fillBuffer buffer index (byte :: rest) = do
+  setBits8 buffer index byte
+  fillBuffer buffer (index + 1) rest
 
-payloadText : Frame -> String
-payloadText frame = pack (map byteToChar (payload frame))
+writePayload : List Bits8 -> IO ()
+writePayload [] = pure ()
+writePayload bytes = do
+  maybeBuffer <- newBuffer (cast (length bytes))
+  case maybeBuffer of
+    Nothing => pure ()
+    Just buffer => do
+      fillBuffer buffer 0 bytes
+      _ <- writeBufferToFile "/dev/stdout" buffer (cast (length bytes))
+      pure ()
 
 public export
 replayUntimed : List Frame -> IO ()
 replayUntimed [] = pure ()
 replayUntimed (frame :: rest) = do
-  putStr (payloadText frame)
+  writePayload (payload frame)
   replayUntimed rest
 
 public export
