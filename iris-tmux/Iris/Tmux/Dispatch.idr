@@ -66,3 +66,13 @@ tmuxSplitWindow target = do
   case result of
     Left err => pure (Left err)
     Right paneId => pure (Right (trimTrailingWhitespace paneId))
+
+captureDepthArgs : CaptureDepth -> List String
+captureDepthArgs VisibleOnly = []
+captureDepthArgs (Lines n) = ["-S", "-" ++ show n]
+captureDepthArgs FullHistory = ["-S", "-"]
+
+public export
+tmuxCapturePane : (target : String) -> (depth : CaptureDepth) -> IO (Either String String)
+tmuxCapturePane target depth =
+  runTmux (["capture-pane", "-t", target, "-p"] ++ captureDepthArgs depth)

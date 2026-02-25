@@ -1,5 +1,6 @@
 module Tmux.Main
 
+import Data.String
 import Iris.Tmux.Dispatch
 import System
 import System.Clock
@@ -14,12 +15,6 @@ formatFailure msg = do
   putStrLn ("iris-tmux-tests: FAIL: " ++ msg)
   exitWith (ExitFailure 1)
 
-isValidPaneId : String -> Bool
-isValidPaneId paneId =
-  case unpack paneId of
-    '%' :: _ => True
-    _ => False
-
 main : IO ()
 main = do
   sessionName <- mkSessionName
@@ -27,22 +22,31 @@ main = do
   case created of
     Left err => formatFailure ("tmuxNewSession failed: " ++ err)
     Right () => do
-      splitResult <- tmuxSplitWindow sessionName
+      let marker = "iris-capture-pane-hello"
+      sent <- runTmux ["send-keys", "-t", sessionName, "echo " ++ marker, "Enter"]
+      waited <- runTmux ["run-shell", "sleep 0.1"]
+      captured <- tmuxCapturePane sessionName FullHistory
       killed <- runTmux ["kill-session", "-t", sessionName]
-      let splitValidated : Either String ()
-          splitValidated =
-            case splitResult of
-              Left err => Left ("tmuxSplitWindow failed: " ++ err)
-              Right paneId =>
-                if isValidPaneId paneId
-                  then Right ()
-                  else Left ("tmuxSplitWindow returned invalid pane id: " ++ show paneId)
-      case (splitValidated, killed) of
+      let captureValidated : Either String ()
+          captureValidated =
+            case sent of
+              Left err => Left ("send-keys failed: " ++ err)
+              Right _ =>
+                case waited of
+                  Left err => Left ("wait step failed: " ++ err)
+                  Right _ =>
+                    case captured of
+                      Left err => Left ("tmuxCapturePane failed: " ++ err)
+                      Right output =>
+                        if isInfixOf marker output
+                          then Right ()
+                          else Left ("capture output missing marker " ++ show marker)
+      case (captureValidated, killed) of
         (Right (), Right _) => putStrLn "iris-tmux-tests: ok"
-        (Left splitErr, Right _) =>
-          formatFailure splitErr
+        (Left captureErr, Right _) =>
+          formatFailure captureErr
         (Right _, Left killErr) =>
           formatFailure ("kill-session cleanup failed: " ++ killErr)
-        (Left splitErr, Left killErr) =>
+        (Left captureErr, Left killErr) =>
           formatFailure
-            (splitErr ++ "; cleanup failed: " ++ killErr)
+            (captureErr ++ "; cleanup failed: " ++ killErr)
