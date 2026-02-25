@@ -1,0 +1,14 @@
+package iris-core
+
+authors    = "heartpunk"
+brief      = "Core types and abstract backend interface for Iris"
+version    = 0.1.0
+
+depends    = base
+
+modules    = Iris.Core.Session
+           , Iris.Core.Window
+           , Iris.Core.Pane
+           , Iris.Core.Layout
+           , Iris.Core.Backend
+           , Iris.Core.Error

@@ -1,0 +1,13 @@
+package iris-rec
+
+authors    = "heartpunk"
+brief      = "Typed terminal event recording and playback (ttyrec successor)"
+version    = 0.1.0
+
+depends    = base
+           , iris-core
+
+modules    = Iris.Rec.Event
+           , Iris.Rec.Record
+           , Iris.Rec.Play
+           , Iris.Rec.Diff

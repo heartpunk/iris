@@ -1,0 +1,12 @@
+package iris-tmux
+
+authors    = "heartpunk"
+brief      = "Phase 1 backend: dispatches to tmux + ttyrec"
+version    = 0.1.0
+
+depends    = base
+           , iris-core
+
+modules    = Iris.Tmux.Backend
+           , Iris.Tmux.Dispatch
+           , Iris.Tmux.Record

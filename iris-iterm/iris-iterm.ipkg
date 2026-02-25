@@ -1,0 +1,12 @@
+package iris-iterm
+
+authors    = "heartpunk"
+brief      = "iTerm2 DCS control sequence layer"
+version    = 0.1.0
+
+depends    = base
+           , iris-core
+
+modules    = Iris.ITerm.Protocol
+           , Iris.ITerm.DCS
+           , Iris.ITerm.Render

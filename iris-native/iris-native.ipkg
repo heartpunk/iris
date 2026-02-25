@@ -1,0 +1,13 @@
+package iris-native
+
+authors    = "heartpunk"
+brief      = "Phase 2: native Idris terminal implementation (stub)"
+version    = 0.1.0
+
+depends    = base
+           , iris-core
+
+-- Not yet implemented. See AGENTS.md for the plan.
+-- iris-tmux must reach feature parity first (verified via iris-rec diff).
+
+modules    = Iris.Native.Backend
