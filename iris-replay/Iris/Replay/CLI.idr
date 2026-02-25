@@ -149,6 +149,12 @@ main = do
   rawArgs <- getArgs
   let args = normalizeArgs rawArgs
   case args of
+    ["--help"] => do
+      putStrLn usage
+      exitWith ExitSuccess
+    ["-h"] => do
+      putStrLn usage
+      exitWith ExitSuccess
     ["replay", path] => runReplay path
     ["search", path, query] => runSearch path query
     ["info", path] => runInfo path

@@ -81,5 +81,11 @@ main = do
   rawArgs <- getArgs
   let args = normalizeArgs rawArgs
   case args of
+    ["--help"] => do
+      putStrLn usage
+      exitWith ExitSuccess
+    ["-h"] => do
+      putStrLn usage
+      exitWith ExitSuccess
     ["record", outputPath] => recordOnce outputPath
     _ => exitWithMessage usage

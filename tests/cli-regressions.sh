@@ -7,7 +7,7 @@ IRIS_REPLAY_BIN="${IRIS_REPLAY_BIN:-$ROOT_DIR/iris-replay/build/exec/iris-replay
 
 usage() {
   cat <<'EOF'
-Usage: tests/cli-regressions.sh [--test replay-byte-safety|record-byte-safety|record-timestamps|search-output|info-output|raw-byte-roundtrip|exit-codes]
+Usage: tests/cli-regressions.sh [--test replay-byte-safety|record-byte-safety|record-timestamps|search-output|info-output|raw-byte-roundtrip|exit-codes|help-flags]
 EOF
 }
 
@@ -380,6 +380,33 @@ run_exit_codes() {
   return "$failures"
 }
 
+run_help_flags() {
+  local failures=0
+
+  set +e
+  "$IRIS_REPLAY_BIN" --help >/dev/null 2>&1
+  local replay_help_status=$?
+  "$IRIS_REC_BIN" --help >/dev/null 2>&1
+  local rec_help_status=$?
+  set -e
+
+  if [[ "$replay_help_status" -eq 0 ]]; then
+    echo "PASS help-flags replay---help"
+  else
+    echo "FAIL help-flags replay---help returned $replay_help_status"
+    failures=$((failures + 1))
+  fi
+
+  if [[ "$rec_help_status" -eq 0 ]]; then
+    echo "PASS help-flags rec---help"
+  else
+    echo "FAIL help-flags rec---help returned $rec_help_status"
+    failures=$((failures + 1))
+  fi
+
+  return "$failures"
+}
+
 main() {
   tmp_dir="$(mktemp -d /tmp/iris-cli-regressions.XXXXXX)"
   trap 'rm -rf "$tmp_dir"' EXIT
@@ -395,6 +422,7 @@ main() {
       run_info_output "$tmp_dir" || failures=$((failures + 1))
       run_raw_byte_roundtrip "$tmp_dir" || failures=$((failures + 1))
       run_exit_codes "$tmp_dir" || failures=$((failures + 1))
+      run_help_flags || failures=$((failures + 1))
       ;;
     "replay-byte-safety")
       run_replay_byte_safety "$tmp_dir" || failures=$((failures + 1))
@@ -416,6 +444,9 @@ main() {
       ;;
     "exit-codes")
       run_exit_codes "$tmp_dir" || failures=$((failures + 1))
+      ;;
+    "help-flags")
+      run_help_flags || failures=$((failures + 1))
       ;;
     *)
       echo "unknown test: $selected_test" >&2
