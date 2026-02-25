@@ -1,13 +1,14 @@
 package iris-rec
 
 authors    = "heartpunk"
-brief      = "Typed terminal event recording and playback (ttyrec successor)"
+brief      = "Write ttyrec recordings from stdin and frame data"
 version    = 0.1.0
 
 depends    = base
            , iris-core
 
-modules    = Iris.Rec.Event
-           , Iris.Rec.Record
-           , Iris.Rec.Play
-           , Iris.Rec.Diff
+modules    = Iris.Rec.Ttyrec.Write
+           , Iris.Rec.CLI
+
+main       = Iris.Rec.CLI
+executable = "iris-rec"

@@ -1,27 +1,12 @@
 module Tests.Main
 
 import Iris.Core.Frame
+import Iris.Rec.Ttyrec.Write
 import Iris.Replay.Ttyrec.Parse
 import System
 
 toByte : Integer -> Bits8
 toByte value = cast value
-
-encodeU32LE : Nat -> List Bits8
-encodeU32LE value =
-  let n : Integer = cast value in
-  [ toByte (n `mod` 256)
-  , toByte ((n `div` 256) `mod` 256)
-  , toByte ((n `div` 65536) `mod` 256)
-  , toByte ((n `div` 16777216) `mod` 256)
-  ]
-
-encodeFrame : Frame -> List Bits8
-encodeFrame frame =
-  encodeU32LE (sec frame)
-    ++ encodeU32LE (usec frame)
-    ++ encodeU32LE (length (payload frame))
-    ++ payload frame
 
 sameFrame : Frame -> Frame -> Bool
 sameFrame lhs rhs =
@@ -127,7 +112,7 @@ propertyRoundtripSeed seedNat =
   let seed = cast seedNat
       frameCount = frameCountForSeed seed
       (frames, _) = generateFrames frameCount seed
-      bytes = concatMap encodeFrame frames
+      bytes = encodeFrames frames
    in parsedFramesEqual frames (parseBytes bytes)
 
 propertyRoundtripMany : Nat -> Bool
@@ -156,6 +141,21 @@ integrationRealFile = do
     Left _ => pure False
     Right frames =>
       pure (not (null frames) && timestampsNonDecreasing frames)
+
+writerRoundtripPath : String
+writerRoundtripPath = "/tmp/iris-rec-roundtrip.ttyrec"
+
+writerRoundtripFile : IO Bool
+writerRoundtripFile = do
+  let frame1 = MkFrame 10 1 [toByte 65, toByte 66, toByte 67]
+  let frame2 = MkFrame 10 2 [toByte 10]
+  let frames = [frame1, frame2]
+  wrote <- writeTtyrec writerRoundtripPath frames
+  case wrote of
+    Left _ => pure False
+    Right () => do
+      parsed <- parseFile writerRoundtripPath
+      pure (parsedFramesEqual frames parsed)
 
 runPure : String -> Bool -> IO Nat
 runPure name passed = do
@@ -188,7 +188,7 @@ normalizeArgs all@(arg0 :: rest) =
 runPropertyOnly : Nat -> IO ()
 runPropertyOnly rounds = do
   prop <- runPure
-            ("property/roundtrip-" ++ show rounds ++ "-seeds")
+            ("property/roundtrip-iris-rec-replay-" ++ show rounds ++ "-seeds")
             (propertyRoundtripMany (roundsToSeedLimit rounds))
   putStrLn ("failures: " ++ show prop)
   if prop == 0
@@ -203,10 +203,13 @@ runDefaultSuite = do
   unit4 <- runPure "unit/truncated-header" unitTruncatedHeader
   unit5 <- runPure "unit/truncated-payload" unitTruncatedPayload
   unit6 <- runPure "unit/multi-frame" unitMultiFrame
-  prop <- runPure "property/roundtrip-200-seeds" (propertyRoundtripMany 199)
+  prop <- runPure "property/roundtrip-iris-rec-replay-200-seeds" (propertyRoundtripMany 199)
+  writeRoundtrip <- runIO "roundtrip/write-file-then-parse" writerRoundtripFile
   integ <- runIO "integration/fixture-parse" integrationRealFile
 
-  let failures = unit1 + unit2 + unit3 + unit4 + unit5 + unit6 + prop + integ
+  let failures =
+        unit1 + unit2 + unit3 + unit4 + unit5 + unit6
+          + prop + writeRoundtrip + integ
   putStrLn ("failures: " ++ show failures)
 
   if failures == 0

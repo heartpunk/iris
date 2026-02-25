@@ -6,6 +6,7 @@ version    = 0.1.0
 
 depends    = base
            , iris-core
+           , iris-rec
            , iris-replay
 
 modules    = Tests.Main
