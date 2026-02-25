@@ -7,7 +7,7 @@ IRIS_REPLAY_BIN="${IRIS_REPLAY_BIN:-$ROOT_DIR/iris-replay/build/exec/iris-replay
 
 usage() {
   cat <<'EOF'
-Usage: tests/cli-regressions.sh [--test replay-byte-safety|record-byte-safety|record-timestamps|search-output|raw-byte-roundtrip|exit-codes]
+Usage: tests/cli-regressions.sh [--test replay-byte-safety|record-byte-safety|record-timestamps|search-output|info-output|raw-byte-roundtrip|exit-codes]
 EOF
 }
 
@@ -259,6 +259,63 @@ run_search_output() {
   return 0
 }
 
+run_info_output() {
+  local tmp_dir="$1"
+  local payload0="$tmp_dir/info-payload-0.txt"
+  local payload1="$tmp_dir/info-payload-1.txt"
+  local frame0="$tmp_dir/info-frame-0.ttyrec"
+  local frame1="$tmp_dir/info-frame-1.ttyrec"
+  local ttyrec_file="$tmp_dir/info-input.ttyrec"
+  local output_file="$tmp_dir/info-output.txt"
+  local expected_size
+
+  printf 'alpha\n' > "$payload0"
+  printf 'beta\n' > "$payload1"
+
+  make_single_frame_ttyrec "$payload0" "$frame0" 10 100
+  make_single_frame_ttyrec "$payload1" "$frame1" 13 600
+  cat "$frame0" "$frame1" > "$ttyrec_file"
+  expected_size="$(wc -c < "$ttyrec_file" | tr -d ' ')"
+
+  set +e
+  "$IRIS_REPLAY_BIN" info "$ttyrec_file" > "$output_file" 2>&1
+  local status=$?
+  set -e
+
+  if [[ "$status" -ne 0 ]]; then
+    echo "FAIL info-output command exited with $status"
+    cat "$output_file"
+    return 1
+  fi
+
+  if ! grep -q "^frames: 2$" "$output_file"; then
+    echo "FAIL info-output missing frame count"
+    cat "$output_file"
+    return 1
+  fi
+
+  if ! grep -q "^file-size: $expected_size$" "$output_file"; then
+    echo "FAIL info-output missing or wrong file-size"
+    cat "$output_file"
+    return 1
+  fi
+
+  if ! grep -q "^timestamp-range: 10.100..13.600$" "$output_file"; then
+    echo "FAIL info-output missing or wrong timestamp-range"
+    cat "$output_file"
+    return 1
+  fi
+
+  if ! grep -q "^duration-us: 3000500$" "$output_file"; then
+    echo "FAIL info-output missing or wrong duration-us"
+    cat "$output_file"
+    return 1
+  fi
+
+  echo "PASS info-output"
+  return 0
+}
+
 run_exit_codes() {
   local tmp_dir="$1"
   local failures=0
@@ -335,6 +392,7 @@ main() {
       run_record_byte_safety "$tmp_dir" || failures=$((failures + 1))
       run_record_timestamps "$tmp_dir" || failures=$((failures + 1))
       run_search_output "$tmp_dir" || failures=$((failures + 1))
+      run_info_output "$tmp_dir" || failures=$((failures + 1))
       run_raw_byte_roundtrip "$tmp_dir" || failures=$((failures + 1))
       run_exit_codes "$tmp_dir" || failures=$((failures + 1))
       ;;
@@ -349,6 +407,9 @@ main() {
       ;;
     "search-output")
       run_search_output "$tmp_dir" || failures=$((failures + 1))
+      ;;
+    "info-output")
+      run_info_output "$tmp_dir" || failures=$((failures + 1))
       ;;
     "raw-byte-roundtrip")
       run_raw_byte_roundtrip "$tmp_dir" || failures=$((failures + 1))

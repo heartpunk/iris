@@ -1,10 +1,12 @@
 module Iris.Replay.CLI
 
+import Data.Buffer
 import Iris.Core.Frame
 import Iris.Replay.Replay
 import Iris.Replay.Search
 import Iris.Replay.Ttyrec.Parse
 import System
+import System.File.Buffer
 
 usage : String
 usage =
@@ -62,6 +64,31 @@ printMatches (match :: rest) = do
   putStrLn (formatMatch match)
   printMatches rest
 
+frameTimestampMicros : Frame -> Integer
+frameTimestampMicros frame =
+  (cast (sec frame) * 1000000) + cast (usec frame)
+
+timestampBounds : List Frame -> Maybe (Integer, Integer)
+timestampBounds [] = Nothing
+timestampBounds (frame :: rest) = go start start rest
+  where
+    start : Integer
+    start = frameTimestampMicros frame
+
+    go : Integer -> Integer -> List Frame -> Maybe (Integer, Integer)
+    go low high [] = Just (low, high)
+    go low high (next :: tail) =
+      let ts = frameTimestampMicros next
+          nextLow = if ts < low then ts else low
+          nextHigh = if ts > high then ts else high
+       in go nextLow nextHigh tail
+
+formatTimestampMicros : Integer -> String
+formatTimestampMicros micros =
+  let secVal = micros `div` 1000000
+      usecVal = micros `mod` 1000000
+   in show secVal ++ "." ++ show usecVal
+
 exitWithMessage : String -> IO ()
 exitWithMessage msg = do
   putStrLn msg
@@ -90,7 +117,20 @@ runInfo path = do
   case parsed of
     Left err => exitWithMessage (formatParseError err)
     Right frames => do
-      putStrLn ("frames: " ++ show (length frames))
+      loaded <- createBufferFromFile path
+      case loaded of
+        Left err => exitWithMessage ("failed to read ttyrec file: " ++ show err)
+        Right buffer => do
+          size <- rawSize buffer
+          putStrLn ("frames: " ++ show (length frames))
+          putStrLn ("file-size: " ++ show size)
+          case timestampBounds frames of
+            Nothing => do
+              putStrLn "timestamp-range: n/a"
+              putStrLn "duration-us: 0"
+            Just (startMicros, endMicros) => do
+              putStrLn ("timestamp-range: " ++ formatTimestampMicros startMicros ++ ".." ++ formatTimestampMicros endMicros)
+              putStrLn ("duration-us: " ++ show (endMicros - startMicros))
 
 public export
 main : IO ()
