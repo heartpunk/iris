@@ -39,3 +39,11 @@ tmuxNewSession name = do
   case result of
     Left err => pure (Left err)
     Right _ => pure (Right ())
+
+public export
+tmuxNewWindow : (session : String) -> (name : String) -> IO (Either String ())
+tmuxNewWindow session name = do
+  result <- runTmux ["new-window", "-t", session, "-n", name]
+  case result of
+    Left err => pure (Left err)
+    Right _ => pure (Right ())

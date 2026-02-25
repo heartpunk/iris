@@ -21,14 +21,14 @@ main = do
   case created of
     Left err => formatFailure ("tmuxNewSession failed: " ++ err)
     Right () => do
-      hasSession <- runTmux ["has-session", "-t", sessionName]
+      windowCreated <- tmuxNewWindow sessionName "iris-window"
       killed <- runTmux ["kill-session", "-t", sessionName]
-      case (hasSession, killed) of
+      case (windowCreated, killed) of
         (Right _, Right _) => putStrLn "iris-tmux-tests: ok"
-        (Left verifyErr, Right _) =>
-          formatFailure ("has-session failed: " ++ verifyErr)
+        (Left windowErr, Right _) =>
+          formatFailure ("tmuxNewWindow failed: " ++ windowErr)
         (Right _, Left killErr) =>
           formatFailure ("kill-session cleanup failed: " ++ killErr)
-        (Left verifyErr, Left killErr) =>
+        (Left windowErr, Left killErr) =>
           formatFailure
-            ("has-session failed: " ++ verifyErr ++ "; cleanup failed: " ++ killErr)
+            ("tmuxNewWindow failed: " ++ windowErr ++ "; cleanup failed: " ++ killErr)
