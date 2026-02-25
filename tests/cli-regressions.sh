@@ -186,24 +186,60 @@ run_exit_codes() {
   local failures=0
 
   set +e
+  "$IRIS_REPLAY_BIN" >/dev/null 2>&1
+  local replay_usage_status=$?
+  "$IRIS_REPLAY_BIN" replay "$tmp_dir/does-not-exist.ttyrec" >/dev/null 2>&1
+  local replay_replay_status=$?
+  "$IRIS_REPLAY_BIN" search "$tmp_dir/does-not-exist.ttyrec" "needle" >/dev/null 2>&1
+  local replay_search_status=$?
   "$IRIS_REPLAY_BIN" info "$tmp_dir/does-not-exist.ttyrec" >/dev/null 2>&1
-  local replay_status=$?
+  local replay_info_status=$?
   "$IRIS_REC_BIN" >/dev/null 2>&1
-  local rec_status=$?
+  local rec_usage_status=$?
+  "$IRIS_REC_BIN" record >/dev/null 2>&1
+  local rec_record_args_status=$?
   set -e
 
-  if [[ "$replay_status" -eq 0 ]]; then
+  if [[ "$replay_usage_status" -eq 0 ]]; then
+    echo "FAIL exit-codes replay-usage returned 0"
+    failures=$((failures + 1))
+  else
+    echo "PASS exit-codes replay-usage"
+  fi
+
+  if [[ "$replay_replay_status" -eq 0 ]]; then
+    echo "FAIL exit-codes replay-replay-missing-file returned 0"
+    failures=$((failures + 1))
+  else
+    echo "PASS exit-codes replay-replay-missing-file"
+  fi
+
+  if [[ "$replay_search_status" -eq 0 ]]; then
+    echo "FAIL exit-codes replay-search-missing-file returned 0"
+    failures=$((failures + 1))
+  else
+    echo "PASS exit-codes replay-search-missing-file"
+  fi
+
+  if [[ "$replay_info_status" -eq 0 ]]; then
     echo "FAIL exit-codes replay-info-missing-file returned 0"
     failures=$((failures + 1))
   else
     echo "PASS exit-codes replay-info-missing-file"
   fi
 
-  if [[ "$rec_status" -eq 0 ]]; then
+  if [[ "$rec_usage_status" -eq 0 ]]; then
     echo "FAIL exit-codes rec-no-args returned 0"
     failures=$((failures + 1))
   else
     echo "PASS exit-codes rec-no-args"
+  fi
+
+  if [[ "$rec_record_args_status" -eq 0 ]]; then
+    echo "FAIL exit-codes rec-record-missing-output returned 0"
+    failures=$((failures + 1))
+  else
+    echo "PASS exit-codes rec-record-missing-output"
   fi
 
   return "$failures"

@@ -13,6 +13,11 @@ usage =
   "iris-rec commands:\n" ++
   "  record <output-path>  Capture stdin and write ttyrec output"
 
+exitWithMessage : String -> IO ()
+exitWithMessage msg = do
+  putStrLn msg
+  exitWith (ExitFailure 1)
+
 normalizeArgs : List String -> List String
 normalizeArgs [] = []
 normalizeArgs all@(arg0 :: rest) =
@@ -63,15 +68,11 @@ recordOnce : String -> IO ()
 recordOnce path = do
   stdinRead <- readFramesFromStdin
   case stdinRead of
-    Left err => do
-      putStrLn err
-      exitWith (ExitFailure 1)
+    Left err => exitWithMessage err
     Right frames => do
       wrote <- writeTtyrec path frames
       case wrote of
-        Left err => do
-          putStrLn err
-          exitWith (ExitFailure 1)
+        Left err => exitWithMessage err
         Right () => pure ()
 
 public export
@@ -81,4 +82,4 @@ main = do
   let args = normalizeArgs rawArgs
   case args of
     ["record", outputPath] => recordOnce outputPath
-    _ => putStrLn usage
+    _ => exitWithMessage usage

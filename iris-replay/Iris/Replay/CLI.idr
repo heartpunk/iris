@@ -24,18 +24,23 @@ formatParseError : ParseError -> String
 formatParseError err =
   "parse error at byte " ++ show (offset err) ++ ": " ++ message err
 
+exitWithMessage : String -> IO ()
+exitWithMessage msg = do
+  putStrLn msg
+  exitWith (ExitFailure 1)
+
 runReplay : String -> IO ()
 runReplay path = do
   result <- replayFile path
   case result of
-    Left err => putStrLn (formatParseError err)
+    Left err => exitWithMessage (formatParseError err)
     Right () => pure ()
 
 runSearch : String -> String -> IO ()
 runSearch path query = do
   parsed <- parseFile path
   case parsed of
-    Left err => putStrLn (formatParseError err)
+    Left err => exitWithMessage (formatParseError err)
     Right frames => do
       let matches = searchFrames query frames
       putStrLn ("matches: " ++ show (length matches))
@@ -44,7 +49,7 @@ runInfo : String -> IO ()
 runInfo path = do
   parsed <- parseFile path
   case parsed of
-    Left err => putStrLn (formatParseError err)
+    Left err => exitWithMessage (formatParseError err)
     Right frames => do
       putStrLn ("frames: " ++ show (length frames))
 
@@ -57,4 +62,4 @@ main = do
     ["replay", path] => runReplay path
     ["search", path, query] => runSearch path query
     ["info", path] => runInfo path
-    _ => putStrLn usage
+    _ => exitWithMessage usage
