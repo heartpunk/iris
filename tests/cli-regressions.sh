@@ -225,13 +225,13 @@ run_search_output() {
     return 1
   fi
 
-  if ! grep -q "ts=10.100" "$output_file"; then
+  if ! grep -q "ts=10.000100" "$output_file"; then
     echo "FAIL search-output missing timestamp for first match"
     cat "$output_file"
     return 1
   fi
 
-  if ! grep -q "ts=12.300" "$output_file"; then
+  if ! grep -q "ts=12.000300" "$output_file"; then
     echo "FAIL search-output missing timestamp for second match"
     cat "$output_file"
     return 1
@@ -300,7 +300,7 @@ run_info_output() {
     return 1
   fi
 
-  if ! grep -q "^timestamp-range: 10.100..13.600$" "$output_file"; then
+  if ! grep -q "^timestamp-range: 10.000100..13.000600$" "$output_file"; then
     echo "FAIL info-output missing or wrong timestamp-range"
     cat "$output_file"
     return 1

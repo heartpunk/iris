@@ -3,6 +3,7 @@ module Tests.Main
 import Data.Buffer
 import Iris.Core.Frame
 import Iris.Rec.Ttyrec.Write
+import Iris.Replay.CLI
 import Iris.Replay.Ttyrec.Parse
 import System
 import System.File.Buffer
@@ -109,6 +110,12 @@ unitMultiFrame =
       pure (bytes1 ++ bytes2)) of
       Left _ => False
       Right bytes => parsedFramesEqual [frame1, frame2] (parseBytes bytes)
+
+unitTimestampFormatting : Bool
+unitTimestampFormatting =
+  formatTimestampMicros 10000100 == "10.000100"
+    && formatTimestampMicros 1000000 == "1.000000"
+    && formatTimestampMicros 100 == "0.000100"
 
 lcgModulus : Integer
 lcgModulus = 4294967296
@@ -457,13 +464,14 @@ runDefaultSuite = do
   unit4 <- runPure "unit/truncated-header" unitTruncatedHeader
   unit5 <- runPure "unit/truncated-payload" unitTruncatedPayload
   unit6 <- runPure "unit/multi-frame" unitMultiFrame
+  unit7 <- runPure "unit/timestamp-format-zero-padded" unitTimestampFormatting
   roundtrip <- runPure "property/roundtrip-iris-rec-replay-200-seeds" (propertyRoundtripMany 199)
   prop <- runPropertySuite 200
   writeRoundtrip <- runIO "roundtrip/write-file-then-parse" writerRoundtripFile
   integ <- runIO "integration/fixture-parse" integrationRealFile
 
   let failures =
-        unit1 + unit2 + unit3 + unit4 + unit5 + unit6
+        unit1 + unit2 + unit3 + unit4 + unit5 + unit6 + unit7
           + roundtrip + prop + writeRoundtrip + integ
   putStrLn ("failures: " ++ show failures)
 

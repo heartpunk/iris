@@ -51,19 +51,6 @@ frameSnippet frame =
   let chars = map sanitizeChar (unpack (payloadText frame))
    in pack (takeChars snippetLimit chars)
 
-formatMatch : FrameMatch -> String
-formatMatch match =
-  let matchedFrame = frame match
-   in "frame=" ++ show (frameIndex match)
-        ++ " ts=" ++ show (sec matchedFrame) ++ "." ++ show (usec matchedFrame)
-        ++ " snippet=" ++ frameSnippet matchedFrame
-
-printMatches : List FrameMatch -> IO ()
-printMatches [] = pure ()
-printMatches (match :: rest) = do
-  putStrLn (formatMatch match)
-  printMatches rest
-
 frameTimestampMicros : Frame -> Integer
 frameTimestampMicros frame =
   (cast (sec frame) * 1000000) + cast (usec frame)
@@ -83,11 +70,35 @@ timestampBounds (frame :: rest) = go start start rest
           nextHigh = if ts > high then ts else high
        in go nextLow nextHigh tail
 
+repeatChar : Nat -> Char -> List Char
+repeatChar Z _ = []
+repeatChar (S k) ch = ch :: repeatChar k ch
+
+padLeft : Nat -> Char -> String -> String
+padLeft width pad text =
+  let chars = unpack text
+      missing = minus width (length chars)
+   in pack (repeatChar missing pad ++ chars)
+
+public export
 formatTimestampMicros : Integer -> String
 formatTimestampMicros micros =
   let secVal = micros `div` 1000000
       usecVal = micros `mod` 1000000
-   in show secVal ++ "." ++ show usecVal
+   in show secVal ++ "." ++ padLeft 6 '0' (show usecVal)
+
+formatMatch : FrameMatch -> String
+formatMatch match =
+  let matchedFrame = frame match
+   in "frame=" ++ show (frameIndex match)
+        ++ " ts=" ++ formatTimestampMicros (frameTimestampMicros matchedFrame)
+        ++ " snippet=" ++ frameSnippet matchedFrame
+
+printMatches : List FrameMatch -> IO ()
+printMatches [] = pure ()
+printMatches (match :: rest) = do
+  putStrLn (formatMatch match)
+  printMatches rest
 
 exitWithMessage : String -> IO ()
 exitWithMessage msg = do
