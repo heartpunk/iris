@@ -7,7 +7,7 @@ IRIS_REPLAY_BIN="${IRIS_REPLAY_BIN:-$ROOT_DIR/iris-replay/build/exec/iris-replay
 
 usage() {
   cat <<'EOF'
-Usage: tests/cli-regressions.sh [--test replay-byte-safety|record-byte-safety|raw-byte-roundtrip|exit-codes]
+Usage: tests/cli-regressions.sh [--test replay-byte-safety|record-byte-safety|record-timestamps|raw-byte-roundtrip|exit-codes]
 EOF
 }
 
@@ -154,6 +154,33 @@ run_record_byte_safety() {
   return 1
 }
 
+run_record_timestamps() {
+  local tmp_dir="$1"
+  local input_file="$tmp_dir/timestamp-input.bin"
+  local ttyrec_file="$tmp_dir/timestamp-output.ttyrec"
+  local sec_hex
+  local usec_hex
+  local sec_val
+  local usec_val
+
+  printf 'timestamp-check\n' > "$input_file"
+  cat "$input_file" | "$IRIS_REC_BIN" record "$ttyrec_file" >/dev/null
+
+  sec_hex="$(dd if="$ttyrec_file" bs=1 count=4 2>/dev/null | xxd -p -c 1000000)"
+  usec_hex="$(dd if="$ttyrec_file" bs=1 skip=4 count=4 2>/dev/null | xxd -p -c 1000000)"
+
+  sec_val=$((16#${sec_hex:6:2}${sec_hex:4:2}${sec_hex:2:2}${sec_hex:0:2}))
+  usec_val=$((16#${usec_hex:6:2}${usec_hex:4:2}${usec_hex:2:2}${usec_hex:0:2}))
+
+  if [[ "$sec_val" -eq 0 && "$usec_val" -eq 0 ]]; then
+    echo "FAIL record-timestamps frame timestamp is 0/0"
+    return 1
+  fi
+
+  echo "PASS record-timestamps"
+  return 0
+}
+
 run_exit_codes() {
   local tmp_dir="$1"
   local failures=0
@@ -192,6 +219,7 @@ main() {
     "")
       run_replay_byte_safety "$tmp_dir" || failures=$((failures + 1))
       run_record_byte_safety "$tmp_dir" || failures=$((failures + 1))
+      run_record_timestamps "$tmp_dir" || failures=$((failures + 1))
       run_raw_byte_roundtrip "$tmp_dir" || failures=$((failures + 1))
       run_exit_codes "$tmp_dir" || failures=$((failures + 1))
       ;;
@@ -200,6 +228,9 @@ main() {
       ;;
     "record-byte-safety")
       run_record_byte_safety "$tmp_dir" || failures=$((failures + 1))
+      ;;
+    "record-timestamps")
+      run_record_timestamps "$tmp_dir" || failures=$((failures + 1))
       ;;
     "raw-byte-roundtrip")
       run_raw_byte_roundtrip "$tmp_dir" || failures=$((failures + 1))
