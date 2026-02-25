@@ -13,6 +13,13 @@ usage =
   "  search <path> <query>  Search frame payload content\n" ++
   "  info <path>            Print basic frame stats"
 
+normalizeArgs : List String -> List String
+normalizeArgs [] = []
+normalizeArgs all@(arg0 :: rest) =
+  if arg0 == "replay" || arg0 == "search" || arg0 == "info"
+    then all
+    else rest
+
 formatParseError : ParseError -> String
 formatParseError err =
   "parse error at byte " ++ show (offset err) ++ ": " ++ message err
@@ -44,7 +51,8 @@ runInfo path = do
 public export
 main : IO ()
 main = do
-  args <- getArgs
+  rawArgs <- getArgs
+  let args = normalizeArgs rawArgs
   case args of
     ["replay", path] => runReplay path
     ["search", path, query] => runSearch path query
