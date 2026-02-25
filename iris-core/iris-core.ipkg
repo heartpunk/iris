@@ -9,6 +9,7 @@ depends    = base
 modules    = Iris.Core.Session
            , Iris.Core.Window
            , Iris.Core.Pane
+           , Iris.Core.Frame
            , Iris.Core.Layout
            , Iris.Core.Backend
            , Iris.Core.Error

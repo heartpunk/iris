@@ -1,0 +1,16 @@
+package iris-replay
+
+authors    = "heartpunk"
+brief      = "Read, replay, and search ttyrec recordings"
+version    = 0.1.0
+
+depends    = base
+           , iris-core
+
+modules    = Iris.Replay.Ttyrec.Parse
+           , Iris.Replay.Replay
+           , Iris.Replay.Search
+           , Iris.Replay.CLI
+
+main       = Iris.Replay.CLI
+executable = "iris-replay"
