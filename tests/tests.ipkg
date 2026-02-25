@@ -1,0 +1,14 @@
+package iris-tests
+
+authors    = "heartpunk"
+brief      = "Unit/property/integration tests for Iris"
+version    = 0.1.0
+
+depends    = base
+           , iris-core
+           , iris-replay
+
+modules    = Tests.Main
+
+main       = Tests.Main
+executable = "iris-tests"
