@@ -7,7 +7,7 @@ IRIS_REPLAY_BIN="${IRIS_REPLAY_BIN:-$ROOT_DIR/iris-replay/build/exec/iris-replay
 
 usage() {
   cat <<'EOF'
-Usage: tests/cli-regressions.sh [--test replay-byte-safety|record-byte-safety|record-timestamps|search-output|search-zero-matches|info-output|raw-byte-roundtrip|exit-codes|help-flags]
+Usage: tests/cli-regressions.sh [--test replay-byte-safety|record-byte-safety|record-timestamps|search-output|search-zero-matches|info-output|empty-file|raw-byte-roundtrip|exit-codes|help-flags]
 EOF
 }
 
@@ -354,6 +354,74 @@ run_info_output() {
   return 0
 }
 
+run_empty_file() {
+  local tmp_dir="$1"
+  local empty_file="$tmp_dir/empty.ttyrec"
+  local replay_output="$tmp_dir/empty-replay-output.bin"
+  local search_output="$tmp_dir/empty-search-output.txt"
+  local info_output="$tmp_dir/empty-info-output.txt"
+  local replay_status
+  local search_status
+  local info_status
+  local replay_size
+
+  : > "$empty_file"
+
+  set +e
+  "$IRIS_REPLAY_BIN" replay "$empty_file" > "$replay_output" 2>&1
+  replay_status=$?
+  "$IRIS_REPLAY_BIN" search "$empty_file" "anything" > "$search_output" 2>&1
+  search_status=$?
+  "$IRIS_REPLAY_BIN" info "$empty_file" > "$info_output" 2>&1
+  info_status=$?
+  set -e
+
+  if [[ "$replay_status" -ne 0 ]]; then
+    echo "FAIL empty-file replay exited with $replay_status"
+    return 1
+  fi
+
+  replay_size="$(wc -c < "$replay_output" | tr -d ' ')"
+  if [[ "$replay_size" -ne 0 ]]; then
+    echo "FAIL empty-file replay produced output"
+    xxd -g 1 "$replay_output"
+    return 1
+  fi
+
+  if [[ "$search_status" -ne 0 ]]; then
+    echo "FAIL empty-file search exited with $search_status"
+    cat "$search_output"
+    return 1
+  fi
+
+  if ! grep -qx "matches: 0" "$search_output"; then
+    echo "FAIL empty-file search missing matches: 0"
+    cat "$search_output"
+    return 1
+  fi
+
+  if [[ "$info_status" -ne 0 ]]; then
+    echo "FAIL empty-file info exited with $info_status"
+    cat "$info_output"
+    return 1
+  fi
+
+  if ! grep -q "^frames: 0$" "$info_output"; then
+    echo "FAIL empty-file info missing frames: 0"
+    cat "$info_output"
+    return 1
+  fi
+
+  if ! grep -q "^timestamp-range: n/a$" "$info_output"; then
+    echo "FAIL empty-file info missing timestamp-range: n/a"
+    cat "$info_output"
+    return 1
+  fi
+
+  echo "PASS empty-file"
+  return 0
+}
+
 run_exit_codes() {
   local tmp_dir="$1"
   local failures=0
@@ -459,6 +527,7 @@ main() {
       run_search_output "$tmp_dir" || failures=$((failures + 1))
       run_search_zero_matches "$tmp_dir" || failures=$((failures + 1))
       run_info_output "$tmp_dir" || failures=$((failures + 1))
+      run_empty_file "$tmp_dir" || failures=$((failures + 1))
       run_raw_byte_roundtrip "$tmp_dir" || failures=$((failures + 1))
       run_exit_codes "$tmp_dir" || failures=$((failures + 1))
       run_help_flags || failures=$((failures + 1))
@@ -480,6 +549,9 @@ main() {
       ;;
     "info-output")
       run_info_output "$tmp_dir" || failures=$((failures + 1))
+      ;;
+    "empty-file")
+      run_empty_file "$tmp_dir" || failures=$((failures + 1))
       ;;
     "raw-byte-roundtrip")
       run_raw_byte_roundtrip "$tmp_dir" || failures=$((failures + 1))
