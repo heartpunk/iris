@@ -47,3 +47,22 @@ tmuxNewWindow session name = do
   case result of
     Left err => pure (Left err)
     Right _ => pure (Right ())
+
+dropLeadingWhitespace : List Char -> List Char
+dropLeadingWhitespace [] = []
+dropLeadingWhitespace (ch :: rest) =
+  if ch == ' ' || ch == '\n' || ch == '\r' || ch == '\t'
+    then dropLeadingWhitespace rest
+    else ch :: rest
+
+trimTrailingWhitespace : String -> String
+trimTrailingWhitespace value =
+  pack (reverse (dropLeadingWhitespace (reverse (unpack value))))
+
+public export
+tmuxSplitWindow : (target : String) -> IO (Either String String)
+tmuxSplitWindow target = do
+  result <- runTmux ["split-window", "-t", target, "-P", "-F", "#{pane_id}"]
+  case result of
+    Left err => pure (Left err)
+    Right paneId => pure (Right (trimTrailingWhitespace paneId))

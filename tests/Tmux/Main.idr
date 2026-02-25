@@ -14,6 +14,12 @@ formatFailure msg = do
   putStrLn ("iris-tmux-tests: FAIL: " ++ msg)
   exitWith (ExitFailure 1)
 
+isValidPaneId : String -> Bool
+isValidPaneId paneId =
+  case unpack paneId of
+    '%' :: _ => True
+    _ => False
+
 main : IO ()
 main = do
   sessionName <- mkSessionName
@@ -21,14 +27,22 @@ main = do
   case created of
     Left err => formatFailure ("tmuxNewSession failed: " ++ err)
     Right () => do
-      windowCreated <- tmuxNewWindow sessionName "iris-window"
+      splitResult <- tmuxSplitWindow sessionName
       killed <- runTmux ["kill-session", "-t", sessionName]
-      case (windowCreated, killed) of
-        (Right _, Right _) => putStrLn "iris-tmux-tests: ok"
-        (Left windowErr, Right _) =>
-          formatFailure ("tmuxNewWindow failed: " ++ windowErr)
+      let splitValidated : Either String ()
+          splitValidated =
+            case splitResult of
+              Left err => Left ("tmuxSplitWindow failed: " ++ err)
+              Right paneId =>
+                if isValidPaneId paneId
+                  then Right ()
+                  else Left ("tmuxSplitWindow returned invalid pane id: " ++ show paneId)
+      case (splitValidated, killed) of
+        (Right (), Right _) => putStrLn "iris-tmux-tests: ok"
+        (Left splitErr, Right _) =>
+          formatFailure splitErr
         (Right _, Left killErr) =>
           formatFailure ("kill-session cleanup failed: " ++ killErr)
-        (Left windowErr, Left killErr) =>
+        (Left splitErr, Left killErr) =>
           formatFailure
-            ("tmuxNewWindow failed: " ++ windowErr ++ "; cleanup failed: " ++ killErr)
+            (splitErr ++ "; cleanup failed: " ++ killErr)
