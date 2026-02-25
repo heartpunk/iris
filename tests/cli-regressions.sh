@@ -7,7 +7,7 @@ IRIS_REPLAY_BIN="${IRIS_REPLAY_BIN:-$ROOT_DIR/iris-replay/build/exec/iris-replay
 
 usage() {
   cat <<'EOF'
-Usage: tests/cli-regressions.sh [--test replay-byte-safety|record-byte-safety|record-timestamps|raw-byte-roundtrip|exit-codes]
+Usage: tests/cli-regressions.sh [--test replay-byte-safety|record-byte-safety|record-timestamps|search-output|raw-byte-roundtrip|exit-codes]
 EOF
 }
 
@@ -41,6 +41,7 @@ require_cmd() {
 require_cmd xxd
 require_cmd wc
 require_cmd cmp
+require_cmd grep
 
 if [[ ! -x "$IRIS_REC_BIN" ]]; then
   echo "missing binary: $IRIS_REC_BIN" >&2
@@ -181,6 +182,83 @@ run_record_timestamps() {
   return 0
 }
 
+run_search_output() {
+  local tmp_dir="$1"
+  local payload0="$tmp_dir/search-payload-0.txt"
+  local payload1="$tmp_dir/search-payload-1.txt"
+  local payload2="$tmp_dir/search-payload-2.txt"
+  local frame0="$tmp_dir/search-frame-0.ttyrec"
+  local frame1="$tmp_dir/search-frame-1.ttyrec"
+  local frame2="$tmp_dir/search-frame-2.ttyrec"
+  local ttyrec_file="$tmp_dir/search-input.ttyrec"
+  local output_file="$tmp_dir/search-output.txt"
+
+  printf 'prefix needle one\n' > "$payload0"
+  printf 'skip frame\n' > "$payload1"
+  printf 'needle two suffix\n' > "$payload2"
+
+  make_single_frame_ttyrec "$payload0" "$frame0" 10 100
+  make_single_frame_ttyrec "$payload1" "$frame1" 11 200
+  make_single_frame_ttyrec "$payload2" "$frame2" 12 300
+  cat "$frame0" "$frame1" "$frame2" > "$ttyrec_file"
+
+  set +e
+  "$IRIS_REPLAY_BIN" search "$ttyrec_file" "needle" > "$output_file" 2>&1
+  local status=$?
+  set -e
+
+  if [[ "$status" -ne 0 ]]; then
+    echo "FAIL search-output command exited with $status"
+    cat "$output_file"
+    return 1
+  fi
+
+  if ! grep -q "frame=0" "$output_file"; then
+    echo "FAIL search-output missing frame index for first match"
+    cat "$output_file"
+    return 1
+  fi
+
+  if ! grep -q "frame=2" "$output_file"; then
+    echo "FAIL search-output missing frame index for second match"
+    cat "$output_file"
+    return 1
+  fi
+
+  if ! grep -q "ts=10.100" "$output_file"; then
+    echo "FAIL search-output missing timestamp for first match"
+    cat "$output_file"
+    return 1
+  fi
+
+  if ! grep -q "ts=12.300" "$output_file"; then
+    echo "FAIL search-output missing timestamp for second match"
+    cat "$output_file"
+    return 1
+  fi
+
+  if ! grep -q "snippet=" "$output_file"; then
+    echo "FAIL search-output missing snippet field"
+    cat "$output_file"
+    return 1
+  fi
+
+  if ! grep -q "needle one" "$output_file"; then
+    echo "FAIL search-output missing first snippet content"
+    cat "$output_file"
+    return 1
+  fi
+
+  if ! grep -q "needle two" "$output_file"; then
+    echo "FAIL search-output missing second snippet content"
+    cat "$output_file"
+    return 1
+  fi
+
+  echo "PASS search-output"
+  return 0
+}
+
 run_exit_codes() {
   local tmp_dir="$1"
   local failures=0
@@ -256,6 +334,7 @@ main() {
       run_replay_byte_safety "$tmp_dir" || failures=$((failures + 1))
       run_record_byte_safety "$tmp_dir" || failures=$((failures + 1))
       run_record_timestamps "$tmp_dir" || failures=$((failures + 1))
+      run_search_output "$tmp_dir" || failures=$((failures + 1))
       run_raw_byte_roundtrip "$tmp_dir" || failures=$((failures + 1))
       run_exit_codes "$tmp_dir" || failures=$((failures + 1))
       ;;
@@ -267,6 +346,9 @@ main() {
       ;;
     "record-timestamps")
       run_record_timestamps "$tmp_dir" || failures=$((failures + 1))
+      ;;
+    "search-output")
+      run_search_output "$tmp_dir" || failures=$((failures + 1))
       ;;
     "raw-byte-roundtrip")
       run_raw_byte_roundtrip "$tmp_dir" || failures=$((failures + 1))

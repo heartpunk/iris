@@ -24,6 +24,44 @@ formatParseError : ParseError -> String
 formatParseError err =
   "parse error at byte " ++ show (offset err) ++ ": " ++ message err
 
+byteToChar : Bits8 -> Char
+byteToChar b = chr (cast (the Integer (cast b)))
+
+payloadText : Frame -> String
+payloadText frame = pack (map byteToChar (payload frame))
+
+sanitizeChar : Char -> Char
+sanitizeChar '\n' = ' '
+sanitizeChar '\r' = ' '
+sanitizeChar '\t' = ' '
+sanitizeChar ch = ch
+
+takeChars : Nat -> List Char -> List Char
+takeChars Z _ = []
+takeChars (S k) [] = []
+takeChars (S k) (ch :: rest) = ch :: takeChars k rest
+
+snippetLimit : Nat
+snippetLimit = 80
+
+frameSnippet : Frame -> String
+frameSnippet frame =
+  let chars = map sanitizeChar (unpack (payloadText frame))
+   in pack (takeChars snippetLimit chars)
+
+formatMatch : FrameMatch -> String
+formatMatch match =
+  let matchedFrame = frame match
+   in "frame=" ++ show (frameIndex match)
+        ++ " ts=" ++ show (sec matchedFrame) ++ "." ++ show (usec matchedFrame)
+        ++ " snippet=" ++ frameSnippet matchedFrame
+
+printMatches : List FrameMatch -> IO ()
+printMatches [] = pure ()
+printMatches (match :: rest) = do
+  putStrLn (formatMatch match)
+  printMatches rest
+
 exitWithMessage : String -> IO ()
 exitWithMessage msg = do
   putStrLn msg
@@ -44,6 +82,7 @@ runSearch path query = do
     Right frames => do
       let matches = searchFrames query frames
       putStrLn ("matches: " ++ show (length matches))
+      printMatches matches
 
 runInfo : String -> IO ()
 runInfo path = do
