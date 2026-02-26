@@ -76,3 +76,11 @@ public export
 tmuxCapturePane : (target : String) -> (depth : CaptureDepth) -> IO (Either String String)
 tmuxCapturePane target depth =
   runTmux (["capture-pane", "-t", target, "-p"] ++ captureDepthArgs depth)
+
+public export
+tmuxSendKeys : (target : String) -> (keys : String) -> IO (Either String ())
+tmuxSendKeys target keys = do
+  result <- runTmux ["send-keys", "-t", target, keys]
+  case result of
+    Left err => pure (Left err)
+    Right _ => pure (Right ())

@@ -22,25 +22,28 @@ main = do
   case created of
     Left err => formatFailure ("tmuxNewSession failed: " ++ err)
     Right () => do
-      let marker = "iris-capture-pane-hello"
-      sent <- runTmux ["send-keys", "-t", sessionName, "echo " ++ marker, "Enter"]
+      sentEcho <- tmuxSendKeys sessionName "echo hello"
+      sentEnter <- tmuxSendKeys sessionName "Enter"
       waited <- runTmux ["run-shell", "sleep 0.1"]
       captured <- tmuxCapturePane sessionName FullHistory
       killed <- runTmux ["kill-session", "-t", sessionName]
       let captureValidated : Either String ()
           captureValidated =
-            case sent of
-              Left err => Left ("send-keys failed: " ++ err)
+            case sentEcho of
+              Left err => Left ("tmuxSendKeys (echo hello) failed: " ++ err)
               Right _ =>
-                case waited of
-                  Left err => Left ("wait step failed: " ++ err)
+                case sentEnter of
+                  Left err => Left ("tmuxSendKeys (Enter) failed: " ++ err)
                   Right _ =>
-                    case captured of
-                      Left err => Left ("tmuxCapturePane failed: " ++ err)
-                      Right output =>
-                        if isInfixOf marker output
-                          then Right ()
-                          else Left ("capture output missing marker " ++ show marker)
+                    case waited of
+                      Left err => Left ("wait step failed: " ++ err)
+                      Right _ =>
+                        case captured of
+                          Left err => Left ("tmuxCapturePane failed: " ++ err)
+                          Right output =>
+                            if isInfixOf "hello" output
+                              then Right ()
+                              else Left "capture output missing \"hello\""
       case (captureValidated, killed) of
         (Right (), Right _) => putStrLn "iris-tmux-tests: ok"
         (Left captureErr, Right _) =>
