@@ -6,4 +6,4 @@ bash-3.2$ echo line3
 line3
 bash-3.2$ exit
 exit
-[2J[?25h[2Jiris-native: exited
+[?1049h[2J[?1049l[?25h

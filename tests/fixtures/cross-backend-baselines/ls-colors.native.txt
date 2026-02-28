@@ -3,4 +3,4 @@
 [01;34mLibrary[0m       [01;34mUsers[0m   [01;34mbin[0m      [01;34mdev[0m    [01;36mhome[0m  [01;34mopt[0m  [01;36mrun[0m      [01;36mtmp[0m   [01;36mvar[0m
 bash-3.2$ exit
 exit
-[2J[?25h[2Jiris-native: exited
+[?1049h[2J[?1049l[?25h

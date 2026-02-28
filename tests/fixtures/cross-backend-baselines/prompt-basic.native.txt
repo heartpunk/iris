@@ -1,3 +1,3 @@
 [?1034h[?1034h[?1034h[?1034hbash-3.2$ exit
 exit
-[2J[?25h[2Jiris-native: exited
+[?1049h[2J[?1049l[?25h
