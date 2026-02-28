@@ -103,10 +103,9 @@ DeleteOriginal(f) ==
     /\ originalExists' = [originalExists EXCEPT ![f] = FALSE]
     /\ UNCHANGED <<fileState, workerState, workerFile, compressedExists>>
 
-\* Clean up a partial .lz file from a failed compression.
+\* Clean up after a failure: remove partial .lz if it exists, mark cleaned.
 CleanupFailed(f) ==
     /\ fileState[f] = "failed"
-    /\ compressedExists[f] = TRUE
     /\ compressedExists' = [compressedExists EXCEPT ![f] = FALSE]
     /\ fileState' = [fileState EXCEPT ![f] = "cleaned"]
     /\ UNCHANGED <<workerState, workerFile, originalExists>>
