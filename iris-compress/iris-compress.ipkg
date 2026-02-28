@@ -11,3 +11,4 @@ modules    = Iris.Compress.TimeUnit
            , Iris.Compress.UUID
            , Iris.Compress.FileClass
            , Iris.Compress.Config
+           , Iris.Compress.Plan
