@@ -211,6 +211,72 @@ proofHexCharUpperA = Refl
 proofHexCharG : isHexChar 'g' = False
 proofHexCharG = Refl
 
+-- ==========================================================================
+-- UUID property tests
+-- ==========================================================================
+
+-- Generate a hex character from a seed.
+hexCharAt : Integer -> Char
+hexCharAt n =
+  let idx = n `mod` 16
+   in if idx < 10
+        then chr (cast idx + ord '0')
+        else chr (cast (idx - 10) + ord 'a')
+
+-- Generate a hex string of given length from a seed.
+genHexStr : Nat -> Integer -> (String, Integer)
+genHexStr Z seed = ("", seed)
+genHexStr (S k) seed =
+  let s = nextSeed seed
+      c = hexCharAt s
+      (rest, s2) = genHexStr k s
+   in (strCons c rest, s2)
+
+-- Generate a valid UUID string from a seed.
+genUUID : Integer -> (String, Integer)
+genUUID seed =
+  let (p1, s1) = genHexStr 8 seed
+      (p2, s2) = genHexStr 4 s1
+      (p3, s3) = genHexStr 4 s2
+      (p4, s4) = genHexStr 4 s3
+      (p5, s5) = genHexStr 12 s4
+   in (p1 ++ "-" ++ p2 ++ "-" ++ p3 ++ "-" ++ p4 ++ "-" ++ p5, s5)
+
+-- Property: generated valid UUID strings pass isUUIDFormat.
+propertyGenUUIDValid : Nat -> Bool
+propertyGenUUIDValid seedNat =
+  let (u, _) = genUUID (cast seedNat)
+   in isUUIDFormat u
+
+-- Property: validateUUID roundtrip — validated UUID's string matches input.
+propertyValidateRoundtrip : Nat -> Bool
+propertyValidateRoundtrip seedNat =
+  let (u, _) = genUUID (cast seedNat)
+   in case validateUUID u of
+        Just v  => uuid v == u
+        Nothing => False
+
+-- Property: non-hex characters cause rejection.
+propertyNonHexRejected : Nat -> Bool
+propertyNonHexRejected seedNat =
+  let (u, s1) = genUUID (cast seedNat)
+      s2 = nextSeed s1
+      -- Pick a position in the UUID (0-35), skip hyphens at 8,13,18,23
+      pos = cast {to=Nat} (s2 `mod` 32)
+      chars = unpack u
+      -- Insert a 'G' (non-hex uppercase) at a hex position
+      replaced = replaceAt pos chars
+   in not (isUUIDFormat (pack replaced))
+  where
+    replaceAt : Nat -> List Char -> List Char
+    replaceAt Z [] = []
+    replaceAt Z (_ :: rest) = 'G' :: rest
+    replaceAt (S k) [] = []
+    replaceAt (S k) (c :: rest) =
+      if c == '-'
+        then c :: replaceAt (S k) rest  -- skip hyphens, don't count them
+        else c :: replaceAt k rest
+
 public export
 main : IO ()
 main = do
@@ -267,9 +333,17 @@ main = do
       && isProven proofHexCharUpperA
       && isProven proofHexCharG)
 
+  genValid <- runPure "property/gen-uuid-valid-200-seeds"
+    (propertyMany propertyGenUUIDValid rounds)
+  validateRt <- runPure "property/validate-uuid-roundtrip-200-seeds"
+    (propertyMany propertyValidateRoundtrip rounds)
+  nonHexRej <- runPure "property/non-hex-rejected-200-seeds"
+    (propertyMany propertyNonHexRejected rounds)
+
   let failures = timeUnitProofs + parseTimeUnitProofs + parseDurationUnits
         + roundtrip + monotonicity + zeroDur + bareMinutes
         + uuidUnits + hexCharProofs
+        + genValid + validateRt + nonHexRej
   putStrLn ("failures: " ++ show failures)
   if failures == 0
     then pure ()
