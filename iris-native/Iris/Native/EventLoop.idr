@@ -8,6 +8,7 @@ import Iris.Native.Command
 import Iris.Native.FFI.Poll
 import Iris.Native.FFI.Pty
 import Iris.Native.FFI.RawIO
+import Iris.Native.FFI.Signal
 import Iris.Native.FFI.Terminal
 import Iris.Native.Render
 import Iris.Native.State
@@ -101,6 +102,26 @@ setupPoll st = do
               else pure (-1)
   pure (stdinIdx, paneIdxs, ctlIdx)
 
+||| Check signal flags and update state accordingly.
+||| SIGTERM/SIGINT → set running := False
+||| SIGCHLD → mark exited panes as closed via waitpidNohang
+checkSignals : IORef MuxState -> IO ()
+checkSignals stRef = do
+  -- SIGTERM/SIGINT: graceful shutdown
+  termFired <- signalCheckTerm
+  when termFired $
+    modifyIORef stRef (\s => { running := False } s)
+  -- SIGCHLD: reap children and mark panes closed
+  childFired <- signalCheckChild
+  when childFired $ do
+    st <- readIORef stRef
+    traverse_ (\p => do
+      r <- waitpidNohang p.childPid
+      when (r > 0) $
+        modifyIORef stRef (\s => { panes := updatePane p.paneId
+          (\pp => { closed := True } pp) s.panes } s)
+      ) (filter (not . (.closed)) st.panes)
+
 ||| Single iteration of the raw byte pump for single-pane mode.
 ||| Bypasses String conversion entirely — uses stdinToFd / fdToStdout
 ||| for byte-transparent passthrough.
@@ -116,6 +137,7 @@ singlePaneLoopOnce stRef buf = do
           stdinIdx <- pollAdd 0
           ptyIdx <- pollAdd pane.ptyFd
           nReady <- pollWait pollTimeoutMs
+          checkSignals stRef
           when (nReady > 0) $ do
             -- stdin → PTY master (raw bytes)
             stdinReady <- pollReadable stdinIdx
@@ -152,6 +174,7 @@ loopOnce stRef = do
   (stdinIdx, paneIdxs, ctlIdx) <- setupPoll st
 
   nReady <- pollWait pollTimeoutMs
+  checkSignals stRef
   when (nReady > 0) $ do
     -- Check stdin: forward to active pane's PTY
     stdinReady <- pollReadable stdinIdx
