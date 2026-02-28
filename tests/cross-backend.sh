@@ -195,6 +195,70 @@ replay_to_screen() {
   "$IRIS_REPLAY_BIN" replay "$ttyrec_file" > "$output_file"
 }
 
+# ============================================================
+# Iris-native backend: record PTY output with ttyrec wrapping iris-native
+# ============================================================
+
+# Run a scenario in iris-native, recording with ovh-ttyrec.
+# ttyrec wraps iris-native, which in turn forks a shell.
+# We run inside a tmux session so iris-native gets a real PTY (TIOCGWINSZ).
+# Args: $1 = scenario name, $2 = tmp_dir, $3 = commands (newline-separated)
+# Produces: $tmp_dir/$scenario-native.ttyrec
+run_native_scenario() {
+  local scenario="$1"
+  local tmp_dir="$2"
+  local commands="$3"
+  local recording="$tmp_dir/${scenario}-native.ttyrec"
+  local tmux_tmpdir="$tmp_dir/tmux-native-$scenario"
+  local session="iris-native-$scenario"
+
+  mkdir -p "$tmux_tmpdir"
+
+  # Launch ttyrec wrapping iris-native inside a tmux session.
+  # tmux provides the PTY (so iris-native can read TIOCGWINSZ).
+  # ttyrec records everything iris-native writes to the terminal.
+  TMUX_TMPDIR="$tmux_tmpdir" tmux new-session -d \
+    -s "$session" \
+    -x "$TERM_COLS" \
+    -y "$TERM_ROWS" \
+    "env BASH_SILENCE_DEPRECATION_WARNING=1 PS1='$ ' TERM=xterm LC_ALL=C LANG=C SHELL=/bin/bash ttyrec -f $recording -- $IRIS_NATIVE_BIN"
+
+  # Give ttyrec + iris-native + child shell time to start
+  sleep 1.0
+
+  # Send commands
+  if [[ -n "$commands" ]]; then
+    while IFS= read -r cmd; do
+      [[ -z "$cmd" ]] && continue
+      TMUX_TMPDIR="$tmux_tmpdir" tmux send-keys -t "$session" "$cmd" Enter
+      sleep 0.3
+    done <<< "$commands"
+  fi
+
+  # Wait for output to settle
+  sleep 0.5
+
+  # Exit: send exit to the inner shell, which should cause iris-native to exit,
+  # which should cause ttyrec to finish.
+  TMUX_TMPDIR="$tmux_tmpdir" tmux send-keys -t "$session" "exit" Enter
+  sleep 1.0
+
+  # Kill session if still alive
+  TMUX_TMPDIR="$tmux_tmpdir" tmux kill-session -t "$session" 2>/dev/null || true
+}
+
+# Normalize replayed output for deterministic comparison.
+# Strips PIDs and other per-run varying content.
+# Args: $1 = input file, $2 = output file (can be same as input)
+normalize_output() {
+  local input="$1"
+  local output="$2"
+  # Replace PID-like numbers in "line NN: NNNNN Killed" patterns.
+  # LC_ALL=C ensures sed handles raw binary bytes without errors.
+  LC_ALL=C sed -E 's/line [0-9]+: [0-9]+ (Killed|Terminated|Aborted)/line X: X \1/g' \
+    "$input" > "$output.tmp" && mv "$output.tmp" "$output"
+}
+
 # --- Main (tests added in subsequent commits) ---
 main() {
   tmp_dir="$(mktemp -d /tmp/iris-cross-backend.XXXXXX)"
