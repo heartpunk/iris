@@ -199,6 +199,34 @@ for archive in "${archives[@]}"; do
     continue
   fi
 
+  if ! "$IRIS_REPLAY_BIN" replay "$tmp_file" >/dev/null 2>&1; then
+    echo "FAIL iris/replay $archive"
+    rm -f "$tmp_file"
+    failures=$((failures + 1))
+    continue
+  fi
+
+  if ! "$IRIS_REPLAY_BIN" dump "$tmp_file" >/dev/null 2>&1; then
+    echo "FAIL iris/dump $archive"
+    rm -f "$tmp_file"
+    failures=$((failures + 1))
+    continue
+  fi
+
+  if ! "$IRIS_REPLAY_BIN" raw-dump "$tmp_file" 0 >/dev/null 2>&1; then
+    echo "FAIL iris/raw-dump $archive"
+    rm -f "$tmp_file"
+    failures=$((failures + 1))
+    continue
+  fi
+
+  if ! "$IRIS_REPLAY_BIN" search "$tmp_file" "a" >/dev/null 2>&1; then
+    echo "FAIL iris/search $archive"
+    rm -f "$tmp_file"
+    failures=$((failures + 1))
+    continue
+  fi
+
   # Layer 3: delete each file immediately after processing
   rm -f "$tmp_file"
 done
