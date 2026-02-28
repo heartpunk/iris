@@ -13,3 +13,4 @@ modules    = Iris.Compress.TimeUnit
            , Iris.Compress.Config
            , Iris.Compress.Plan
            , Iris.Compress.Execute
+           , Iris.Compress.Discovery
