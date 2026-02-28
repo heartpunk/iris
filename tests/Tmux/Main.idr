@@ -15,6 +15,25 @@ formatFailure msg = do
   putStrLn ("iris-tmux-tests: FAIL: " ++ msg)
   exitWith (ExitFailure 1)
 
+testSelectPane : IO ()
+testSelectPane = do
+  sessionName <- mkSessionName
+  created <- tmuxNewSession sessionName
+  case created of
+    Left err => formatFailure ("selectPane: setup failed: " ++ err)
+    Right () => do
+      splitResult <- tmuxSplitWindow sessionName
+      case splitResult of
+        Left err => do
+          _ <- runTmux ["kill-session", "-t", sessionName]
+          formatFailure ("selectPane: split failed: " ++ err)
+        Right paneId => do
+          result <- tmuxSelectPane paneId
+          _ <- runTmux ["kill-session", "-t", sessionName]
+          case result of
+            Left err => formatFailure ("tmuxSelectPane failed: " ++ err)
+            Right () => putStrLn "iris-tmux-tests: select-pane: ok"
+
 testHasSession : IO ()
 testHasSession = do
   sessionName <- mkSessionName
@@ -186,6 +205,8 @@ main = do
   testListSessions
   -- test: tmuxAttachSession
   testAttachSession
+  -- test: tmuxSelectPane
+  testSelectPane
   -- test: tmuxHasSession
   testHasSession
   -- test: tmuxKillSession

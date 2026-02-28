@@ -134,3 +134,9 @@ tmuxHasSession : (name : String) -> IO Bool
 tmuxHasSession name = do
   result <- runTmux ["has-session", "-t", name]
   pure (isRight result)
+
+public export
+tmuxSelectPane : (target : String) -> IO (Either String ())
+tmuxSelectPane target = do
+  result <- runTmux ["select-pane", "-t", target]
+  pure (map (const ()) result)
