@@ -340,17 +340,17 @@ propertyWriteFidelity = do
             Left _ => pure False
             Right bytes => pure (bytes == expected)
 
--- Property: parse a written ttyrec, then collectPayloads == expected payload concat.
--- Covers the parse -> collectPayloads pipeline that raw-dump relies on.
+-- Property: raw-dump selects a single frame's bytes byte-exact.
+-- Write two frames with distinct payloads, parse back, verify each frame's
+-- payload is preserved independently (full byte range in frame 1).
 rawDumpRoundtripPath : String
 rawDumpRoundtripPath = "/tmp/iris-replay-raw-dump-roundtrip.ttyrec"
 
 propertyRawDumpRoundtrip : IO Bool
 propertyRawDumpRoundtrip = do
-  let frame1 = MkFrame 1 100 allByteValues
-      frame2 = MkFrame 2 200 [toByte 0, toByte 255, toByte 128]
-      frames = [frame1, frame2]
-      expected = concatPayloads frames
+  let frame0 = MkFrame 1 100 [toByte 10, toByte 20, toByte 30]
+      frame1 = MkFrame 2 200 allByteValues
+      frames = [frame0, frame1]
   wrote <- writeTtyrec rawDumpRoundtripPath frames
   case wrote of
     Left _ => pure False
@@ -358,8 +358,10 @@ propertyRawDumpRoundtrip = do
       parsed <- parseFile rawDumpRoundtripPath Nothing
       case parsed of
         Left _ => pure False
-        Right parsedFrames =>
-          pure (collectPayloads parsedFrames == expected)
+        Right [pf0, pf1] =>
+          -- Each frame's payload must survive write -> parse independently
+          pure (payload pf0 == payload frame0 && payload pf1 == payload frame1)
+        Right _ => pure False
 
 propertyRoundtripSeed : Nat -> Bool
 propertyRoundtripSeed seedNat =

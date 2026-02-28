@@ -473,42 +473,71 @@ run_raw_dump_output() {
   local tmp_dir="$1"
   local payload0="$tmp_dir/raw-dump-payload-0.bin"
   local payload1="$tmp_dir/raw-dump-payload-1.bin"
-  local expected="$tmp_dir/raw-dump-expected.bin"
   local frame0="$tmp_dir/raw-dump-frame-0.ttyrec"
   local frame1="$tmp_dir/raw-dump-frame-1.ttyrec"
   local ttyrec_file="$tmp_dir/raw-dump-input.ttyrec"
   local output_file="$tmp_dir/raw-dump-output.bin"
+  local oob_output="$tmp_dir/raw-dump-oob-output.txt"
 
-  # Frame 0: bytes 0x00-0x7F (covers NUL and non-ASCII range below 0x80)
-  printf '%02x' $(seq 0 127) | xxd -r -p > "$payload0"
-  # Frame 1: bytes 0x80-0xFF (full high byte range)
+  # Frame 0: some ASCII bytes; Frame 1: full non-ASCII range (0x80-0xFF).
+  # The two payloads are intentionally different so we can verify selection.
+  printf 'frame zero bytes\n' > "$payload0"
   printf '%02x' $(seq 128 255) | xxd -r -p > "$payload1"
-  # Expected output: exact byte-for-byte concatenation of both payloads
-  cat "$payload0" "$payload1" > "$expected"
 
   make_single_frame_ttyrec "$payload0" "$frame0" 1 0
   make_single_frame_ttyrec "$payload1" "$frame1" 2 0
   cat "$frame0" "$frame1" > "$ttyrec_file"
 
+  # Requesting frame 1 should return only payload1, not payload0
   set +e
-  "$IRIS_REPLAY_BIN" raw-dump "$ttyrec_file" > "$output_file" 2>&1
+  "$IRIS_REPLAY_BIN" raw-dump "$ttyrec_file" 1 > "$output_file" 2>&1
   local status=$?
   set -e
 
   if [[ "$status" -ne 0 ]]; then
-    echo "FAIL raw-dump-output command exited with $status"
+    echo "FAIL raw-dump-output frame 1 command exited with $status"
     xxd -g 1 "$output_file" | head -5
     return 1
   fi
 
-  if ! cmp -s "$expected" "$output_file"; then
-    echo "FAIL raw-dump-output output does not match expected byte-exact payload concatenation"
-    echo "expected size: $(wc -c < "$expected" | tr -d ' ') bytes"
+  if ! cmp -s "$payload1" "$output_file"; then
+    echo "FAIL raw-dump-output frame 1 output does not match payload1"
+    echo "expected size: $(wc -c < "$payload1" | tr -d ' ') bytes"
     echo "actual size:   $(wc -c < "$output_file" | tr -d ' ') bytes"
     echo "expected (first 32 bytes):"
-    xxd -g 1 "$expected" | head -2
+    xxd -g 1 "$payload1" | head -2
     echo "actual (first 32 bytes):"
     xxd -g 1 "$output_file" | head -2
+    return 1
+  fi
+
+  # Requesting frame 0 should return only payload0
+  set +e
+  "$IRIS_REPLAY_BIN" raw-dump "$ttyrec_file" 0 > "$output_file" 2>&1
+  status=$?
+  set -e
+
+  if [[ "$status" -ne 0 ]]; then
+    echo "FAIL raw-dump-output frame 0 command exited with $status"
+    return 1
+  fi
+
+  if ! cmp -s "$payload0" "$output_file"; then
+    echo "FAIL raw-dump-output frame 0 output does not match payload0"
+    echo "expected size: $(wc -c < "$payload0" | tr -d ' ') bytes"
+    echo "actual size:   $(wc -c < "$output_file" | tr -d ' ') bytes"
+    return 1
+  fi
+
+  # Out-of-bounds index should exit non-zero
+  set +e
+  "$IRIS_REPLAY_BIN" raw-dump "$ttyrec_file" 2 > "$oob_output" 2>&1
+  local oob_status=$?
+  set -e
+
+  if [[ "$oob_status" -eq 0 ]]; then
+    echo "FAIL raw-dump-output out-of-bounds index should exit non-zero"
+    cat "$oob_output"
     return 1
   fi
 
@@ -542,7 +571,7 @@ run_empty_file() {
   info_status=$?
   "$IRIS_REPLAY_BIN" dump "$empty_file" > "$dump_output" 2>&1
   dump_status=$?
-  "$IRIS_REPLAY_BIN" raw-dump "$empty_file" > "$raw_dump_output" 2>&1
+  "$IRIS_REPLAY_BIN" raw-dump "$empty_file" 0 > "$raw_dump_output" 2>&1
   raw_dump_status=$?
   set -e
 
@@ -602,17 +631,9 @@ run_empty_file() {
     return 1
   fi
 
-  if [[ "$raw_dump_status" -ne 0 ]]; then
-    echo "FAIL empty-file raw-dump exited with $raw_dump_status"
-    xxd -g 1 "$raw_dump_output"
-    return 1
-  fi
-
-  local raw_dump_size
-  raw_dump_size="$(wc -c < "$raw_dump_output" | tr -d ' ')"
-  if [[ "$raw_dump_size" -ne 0 ]]; then
-    echo "FAIL empty-file raw-dump produced output"
-    xxd -g 1 "$raw_dump_output"
+  # raw-dump on an empty file (frame index 0 out of bounds) must exit non-zero
+  if [[ "$raw_dump_status" -eq 0 ]]; then
+    echo "FAIL empty-file raw-dump should exit non-zero (frame 0 out of bounds on empty file)"
     return 1
   fi
 
@@ -635,7 +656,7 @@ run_exit_codes() {
   local replay_info_status=$?
   "$IRIS_REPLAY_BIN" dump "$tmp_dir/does-not-exist.ttyrec" >/dev/null 2>&1
   local replay_dump_status=$?
-  "$IRIS_REPLAY_BIN" raw-dump "$tmp_dir/does-not-exist.ttyrec" >/dev/null 2>&1
+  "$IRIS_REPLAY_BIN" raw-dump "$tmp_dir/does-not-exist.ttyrec" 0 >/dev/null 2>&1
   local replay_raw_dump_status=$?
   "$IRIS_REC_BIN" >/dev/null 2>&1
   local rec_usage_status=$?

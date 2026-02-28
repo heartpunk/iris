@@ -17,7 +17,7 @@ usage =
   "  search <path> <query>  Search frame payload content\n" ++
   "  info <path>            Print basic frame stats\n" ++
   "  dump <path>            Dump each frame with index, timestamp, length, and content\n" ++
-  "  raw-dump <path>        Dump raw payload bytes to stdout (no metadata or sanitization)\n" ++
+  "  raw-dump <path> <frame>  Dump raw bytes of a single frame to stdout (0-indexed)\n" ++
   "\n" ++
   "options:\n" ++
   "  --force-decompression=<alg>  Override auto-detection (lzip|gzip|zstd|xz|bzip2|none)"
@@ -183,12 +183,43 @@ runDump path override = do
     Left err => exitWithMessage (formatParseError err)
     Right frames => printDumpLines 0 frames
 
-runRawDump : String -> Maybe Compression -> IO ()
-runRawDump path override = do
-  result <- replayFile path override
-  case result of
-    Left err => exitWithMessage err
-    Right () => pure ()
+parseNat : String -> Maybe Nat
+parseNat s =
+  case unpack s of
+    [] => Nothing
+    chars => foldl step (Just 0) chars
+  where
+    step : Maybe Nat -> Char -> Maybe Nat
+    step Nothing _ = Nothing
+    step (Just acc) ch =
+      let d = the Int (ord ch - ord '0')
+       in if d >= 0 && d < 10
+            then Just (acc * 10 + cast d)
+            else Nothing
+
+frameAt : Nat -> List Frame -> Maybe Frame
+frameAt _ [] = Nothing
+frameAt Z (frame :: _) = Just frame
+frameAt (S k) (_ :: rest) = frameAt k rest
+
+runRawDump : String -> String -> Maybe Compression -> IO ()
+runRawDump path indexStr override =
+  case parseNat indexStr of
+    Nothing => exitWithMessage ("invalid frame index: " ++ indexStr)
+    Just idx => do
+      parsed <- parseFile path override
+      case parsed of
+        Left err => exitWithMessage (formatParseError err)
+        Right frames =>
+          case frameAt idx frames of
+            Nothing => exitWithMessage
+              ("frame index out of bounds: " ++ show idx
+                ++ " (file has " ++ show (length frames) ++ " frames)")
+            Just frame => do
+              result <- replayUntimed [frame]
+              case result of
+                Left err => exitWithMessage err
+                Right () => pure ()
 
 runInfo : String -> Maybe Compression -> IO ()
 runInfo path override = do
@@ -239,5 +270,5 @@ main = do
         ["search", path, query] => runSearch path query override
         ["info", path] => runInfo path override
         ["dump", path] => runDump path override
-        ["raw-dump", path] => runRawDump path override
+        ["raw-dump", path, indexStr] => runRawDump path indexStr override
         _ => exitWithMessage usage
