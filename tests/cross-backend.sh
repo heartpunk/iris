@@ -450,6 +450,10 @@ run_prompt_basic() {
   run_scenario "prompt-basic" "" "$1"
 }
 
+run_cat_binary() {
+  run_scenario "cat-binary" "$(printf "printf '\\\\x00\\\\x01\\\\x80\\\\xff'")" "$1"
+}
+
 # --- Main ---
 main() {
   tmp_dir="$(mktemp -d /tmp/iris-cross-backend.XXXXXX)"
@@ -465,6 +469,7 @@ main() {
       run_multiline "$tmp_dir" || failures=$((failures + 1))
       run_ls_colors "$tmp_dir" || failures=$((failures + 1))
       run_prompt_basic "$tmp_dir" || failures=$((failures + 1))
+      run_cat_binary "$tmp_dir" || failures=$((failures + 1))
       ;;
     "simple-echo")
       run_simple_echo "$tmp_dir" || failures=$((failures + 1))
@@ -477,6 +482,9 @@ main() {
       ;;
     "prompt-basic")
       run_prompt_basic "$tmp_dir" || failures=$((failures + 1))
+      ;;
+    "cat-binary")
+      run_cat_binary "$tmp_dir" || failures=$((failures + 1))
       ;;
     *)
       echo "unknown test: $selected_test" >&2
