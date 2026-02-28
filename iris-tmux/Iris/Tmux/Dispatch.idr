@@ -117,3 +117,7 @@ public export
 tmuxDisplayMessage : (target : String) -> (format : String) -> IO (Either String String)
 tmuxDisplayMessage target format =
   runTmux ["display-message", "-t", target, "-p", format]
+
+public export
+tmuxListWindows : (target : String) -> IO (Either String String)
+tmuxListWindows target = runTmux ["list-windows", "-t", target]

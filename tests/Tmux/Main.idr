@@ -15,6 +15,22 @@ formatFailure msg = do
   putStrLn ("iris-tmux-tests: FAIL: " ++ msg)
   exitWith (ExitFailure 1)
 
+testListWindows : IO ()
+testListWindows = do
+  sessionName <- mkSessionName
+  created <- tmuxNewSession sessionName
+  case created of
+    Left err => formatFailure ("listWindows: setup failed: " ++ err)
+    Right () => do
+      result <- tmuxListWindows sessionName
+      _ <- runTmux ["kill-session", "-t", sessionName]
+      case result of
+        Left err => formatFailure ("tmuxListWindows failed: " ++ err)
+        Right output =>
+          if length output > 0
+            then putStrLn "iris-tmux-tests: list-windows: ok"
+            else formatFailure "tmuxListWindows returned empty output"
+
 testDisplayMessage : IO ()
 testDisplayMessage = do
   sessionName <- mkSessionName
@@ -139,6 +155,8 @@ main = do
   testListSessions
   -- test: tmuxAttachSession
   testAttachSession
+  -- test: tmuxListWindows
+  testListWindows
   -- test: tmuxDisplayMessage
   testDisplayMessage
   -- test: tmuxListPanes
