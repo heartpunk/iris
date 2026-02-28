@@ -53,7 +53,6 @@ Cross-validates iris-replay against real `.ttyrec.lz` recordings and external to
 tests/run-tier.sh              # tier 1 (default)
 tests/run-tier.sh --tier 2
 tests/run-tier.sh --tier 3
-tests/run-tier.sh --tier 4
 ```
 
 | Tier | Files | Property Rounds | Budget | When |
@@ -61,7 +60,7 @@ tests/run-tier.sh --tier 4
 | 1 | 5 | 10 | <1s | Every run |
 | 2 | 20 | 50 | <10s | Pre-commit |
 | 3 | 100 | 200 | <60s | CI / thorough check |
-| 4 | all (~1550) | 1000 | unlimited | Occasional full sweep |
+| 4 | all (~1550) | 1000 | unlimited | Private corpus, not distributed |
 
 Each tier runs the same checks per file:
 
@@ -75,7 +74,7 @@ Each tier runs the same checks per file:
 8. `iris-replay raw-dump` — raw byte extraction
 9. `iris-replay search` — content search
 
-Recordings live in `~/.ttyrec/` as UUID-named `.lz` files.
+Tiers 1-3 require `~/.ttyrec/*.lz` recordings (not included in the repo). Tier 4 runs against a private corpus.
 
 ## 3. CLI Regression Tests (`tests/cli-regressions.sh`)
 

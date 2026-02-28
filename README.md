@@ -110,8 +110,9 @@ Cross-validates against OVH ttyrec tools (`ttyplay`, `ttytime`) and IPBT:
 tests/run-tier.sh              # tier 1: 5 files, 10 property rounds, <1s
 tests/run-tier.sh --tier 2     # 20 files, 50 rounds, <10s
 tests/run-tier.sh --tier 3     # 100 files, 200 rounds, <60s
-tests/run-tier.sh --tier 4     # full corpus (~1550 files), 1000 rounds
 ```
+
+Requires `~/.ttyrec/*.lz` recordings. Tier 4 (full corpus sweep) is private and not included in the repo.
 
 ### CLI regression tests
 
