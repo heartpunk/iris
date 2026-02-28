@@ -1,7 +1,5 @@
 module Iris.Compress.Execute
 
-import Iris.Compress.UUID
-
 -- ==========================================================================
 -- FFI bindings to the Rust support crate (iris-compress-support)
 -- ==========================================================================

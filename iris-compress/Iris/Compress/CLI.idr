@@ -53,7 +53,7 @@ parseArgs (arg :: _) _ = Left ("Unknown option: " ++ arg)
 ||| Print a message to stderr.
 errLn : String -> IO ()
 errLn msg = do
-  _ <- errLn msg
+  _ <- fPutStrLn stderr msg
   pure ()
 
 ||| Remove a file, ignoring errors.
