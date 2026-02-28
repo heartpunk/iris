@@ -56,6 +56,8 @@
               pkgs."ovh-ttyrec"
               pkgs.ipbt
               pkgs.lzip
+              pkgs.rustc
+              pkgs.cargo
             ];
           };
         });

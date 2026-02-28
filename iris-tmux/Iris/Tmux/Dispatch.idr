@@ -140,3 +140,15 @@ tmuxSelectPane : (target : String) -> IO (Either String ())
 tmuxSelectPane target = do
   result <- runTmux ["select-pane", "-t", target]
   pure (map (const ()) result)
+
+public export
+tmuxSelectWindow : (target : String) -> IO (Either String ())
+tmuxSelectWindow target = do
+  result <- runTmux ["select-window", "-t", target]
+  pure (map (const ()) result)
+
+public export
+tmuxSwitchClient : (target : String) -> IO (Either String ())
+tmuxSwitchClient target = do
+  result <- runTmux ["switch-client", "-t", target]
+  pure (map (const ()) result)

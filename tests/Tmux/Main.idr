@@ -271,6 +271,36 @@ unitTestSelectPane logFile = do
             then putStrLn "iris-tmux-tests: unit select-pane: ok"
             else formatFailure ("unit select-pane: log: " ++ contents)
 
+unitTestSelectWindow : String -> IO ()
+unitTestSelectWindow logFile = do
+  clearLog logFile
+  result <- tmuxSelectWindow "test-target"
+  case result of
+    Left err => formatFailure ("unit select-window: " ++ err)
+    Right () => do
+      log <- readLog logFile
+      case log of
+        Left err => formatFailure ("unit select-window: couldn't read log: " ++ err)
+        Right contents =>
+          if isInfixOf "select-window" contents && isInfixOf "test-target" contents
+            then putStrLn "iris-tmux-tests: unit select-window: ok"
+            else formatFailure ("unit select-window: log: " ++ contents)
+
+unitTestSwitchClient : String -> IO ()
+unitTestSwitchClient logFile = do
+  clearLog logFile
+  result <- tmuxSwitchClient "test-target"
+  case result of
+    Left err => formatFailure ("unit switch-client: " ++ err)
+    Right () => do
+      log <- readLog logFile
+      case log of
+        Left err => formatFailure ("unit switch-client: couldn't read log: " ++ err)
+        Right contents =>
+          if isInfixOf "switch-client" contents && isInfixOf "test-target" contents
+            then putStrLn "iris-tmux-tests: unit switch-client: ok"
+            else formatFailure ("unit switch-client: log: " ++ contents)
+
 unitTestHasSession : String -> IO ()
 unitTestHasSession logFile = do
   clearLog logFile
@@ -326,6 +356,8 @@ runUnitTests = do
           unitTestKillServer logFile
           unitTestKillSession logFile
           unitTestSelectPane logFile
+          unitTestSelectWindow logFile
+          unitTestSwitchClient logFile
           unitTestHasSession logFile
           True <- setEnv "PATH" origPathStr True
             | False => formatFailure "unit tests: failed to restore PATH"
