@@ -87,8 +87,14 @@ require_cmd() {
 
 require_cmd tmux
 require_cmd ttyrec
+require_cmd ipbt-dump
 require_cmd xxd
 require_cmd cmp
+
+if [[ ! -x "$IRIS_REC_BIN" ]]; then
+  echo "missing binary: $IRIS_REC_BIN" >&2
+  exit 1
+fi
 
 if [[ ! -x "$IRIS_REPLAY_BIN" ]]; then
   echo "missing binary: $IRIS_REPLAY_BIN" >&2
@@ -193,6 +199,69 @@ replay_to_screen() {
   fi
 
   "$IRIS_REPLAY_BIN" replay "$ttyrec_file" > "$output_file"
+}
+
+# ============================================================
+# Recording cross-product validation
+# ============================================================
+
+# Helper: read frame count with iris-replay
+frame_count_iris_replay() {
+  "$IRIS_REPLAY_BIN" info "$1" 2>&1 | awk '/^frames: [0-9]+$/ { print $2; exit }'
+}
+
+# Helper: read frame count with ipbt
+frame_count_ipbt() {
+  ipbt-dump -T -H "$1" 2>/dev/null \
+    | awk -F: '/:offset / { c += 1 } END { print c + 0 }'
+}
+
+# Cross-validate a ttyrec recording: re-record with iris-rec, then
+# read both recordings with both readers and verify consistency.
+# Args: $1 = ttyrec file from ovh-ttyrec, $2 = label, $3 = tmp_dir
+cross_validate_recording() {
+  local ovh_ttyrec="$1"
+  local label="$2"
+  local tmp_dir="$3"
+  local iris_ttyrec="$tmp_dir/${label}-iris-rec.ttyrec"
+  local raw_stream="$tmp_dir/${label}-raw-stream.bin"
+
+  if [[ ! -f "$ovh_ttyrec" ]]; then
+    return 0  # skip if no recording
+  fi
+
+  # Extract raw byte stream from ovh-ttyrec recording via replay
+  "$IRIS_REPLAY_BIN" replay "$ovh_ttyrec" > "$raw_stream" 2>/dev/null || true
+
+  # Re-record the byte stream with iris-rec
+  "$IRIS_REC_BIN" record "$iris_ttyrec" < "$raw_stream" >/dev/null 2>&1 || true
+
+  if [[ ! -f "$iris_ttyrec" ]]; then
+    echo "  XVAL-WARN $label: iris-rec failed to produce recording"
+    return 0  # non-fatal — cross-validation is advisory
+  fi
+
+  # Read both recordings with both readers
+  local ovh_iris ovh_ipbt iris_iris iris_ipbt
+  ovh_iris="$(frame_count_iris_replay "$ovh_ttyrec")"
+  ovh_ipbt="$(frame_count_ipbt "$ovh_ttyrec")"
+  iris_iris="$(frame_count_iris_replay "$iris_ttyrec")"
+  iris_ipbt="$(frame_count_ipbt "$iris_ttyrec")"
+
+  # Both readers should agree on each recording
+  local ok=true
+  if [[ "$ovh_iris" -ne "$ovh_ipbt" ]]; then
+    echo "  XVAL-FAIL $label: ovh-ttyrec frame count mismatch iris=$ovh_iris ipbt=$ovh_ipbt"
+    ok=false
+  fi
+  if [[ "$iris_iris" -ne "$iris_ipbt" ]]; then
+    echo "  XVAL-FAIL $label: iris-rec frame count mismatch iris=$iris_iris ipbt=$iris_ipbt"
+    ok=false
+  fi
+
+  if [[ "$ok" == "true" ]]; then
+    echo "  XVAL-OK $label: ovh=$ovh_iris frames, iris-rec=$iris_iris frames"
+  fi
 }
 
 # ============================================================
@@ -384,6 +453,7 @@ run_scenario() {
 
     replay_to_screen "$tmux_recording" "$tmux_screen"
     normalize_output "$tmux_screen" "$tmux_screen"
+    cross_validate_recording "$tmux_recording" "${scenario}-tmux" "$tmp_dir"
 
     if [[ "$update_baselines" == "true" ]]; then
       save_baseline "$scenario" tmux "$tmux_screen"
@@ -421,6 +491,7 @@ run_scenario() {
 
   replay_to_screen "$native_recording" "$native_screen"
   normalize_output "$native_screen" "$native_screen"
+  cross_validate_recording "$native_recording" "${scenario}-native" "$tmp_dir"
 
   if [[ "$update_baselines" == "true" ]]; then
     save_baseline "$scenario" native "$native_screen"
