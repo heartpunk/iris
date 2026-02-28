@@ -2,6 +2,7 @@ module Compress.Main
 
 import Iris.Compress.TimeUnit
 import Iris.Compress.UUID
+import Iris.Compress.FileClass
 import System
 
 -- Takes an equality proof; always True at runtime.
@@ -212,6 +213,58 @@ proofHexCharG : isHexChar 'g' = False
 proofHexCharG = Refl
 
 -- ==========================================================================
+-- FileClass unit tests
+-- ==========================================================================
+
+-- Helper: compare FileClass values.
+fileClassEq : FileClass -> FileClass -> Bool
+fileClassEq (RawTtyrec a) (RawTtyrec b) = uuid a == uuid b
+fileClassEq (ZstTtyrec a) (ZstTtyrec b) = uuid a == uuid b
+fileClassEq (AlreadyCompressed a) (AlreadyCompressed b) = uuid a == uuid b
+fileClassEq (Unrecognized a) (Unrecognized b) = a == b
+fileClassEq _ _ = False
+
+unitClassifyRaw : Bool
+unitClassifyRaw = fileClassEq
+  (classifyFile "550e8400-e29b-41d4-a716-446655440000")
+  (RawTtyrec (MkValidUUID "550e8400-e29b-41d4-a716-446655440000"))
+
+unitClassifyZst : Bool
+unitClassifyZst = fileClassEq
+  (classifyFile "550e8400-e29b-41d4-a716-446655440000.ttyrec.zst")
+  (ZstTtyrec (MkValidUUID "550e8400-e29b-41d4-a716-446655440000"))
+
+unitClassifyLz : Bool
+unitClassifyLz = fileClassEq
+  (classifyFile "550e8400-e29b-41d4-a716-446655440000.lz")
+  (AlreadyCompressed (MkValidUUID "550e8400-e29b-41d4-a716-446655440000"))
+
+unitClassifyBadLz : Bool
+unitClassifyBadLz = fileClassEq
+  (classifyFile "not-a-uuid.lz")
+  (Unrecognized "not-a-uuid.lz")
+
+unitClassifyBadZst : Bool
+unitClassifyBadZst = fileClassEq
+  (classifyFile "not-a-uuid.ttyrec.zst")
+  (Unrecognized "not-a-uuid.ttyrec.zst")
+
+unitClassifyRandom : Bool
+unitClassifyRandom = fileClassEq
+  (classifyFile "random-file.txt")
+  (Unrecognized "random-file.txt")
+
+unitClassifyEmpty : Bool
+unitClassifyEmpty = fileClassEq
+  (classifyFile "")
+  (Unrecognized "")
+
+unitClassifyHidden : Bool
+unitClassifyHidden = fileClassEq
+  (classifyFile ".hidden-file")
+  (Unrecognized ".hidden-file")
+
+-- ==========================================================================
 -- UUID property tests
 -- ==========================================================================
 
@@ -333,6 +386,16 @@ main = do
       && isProven proofHexCharUpperA
       && isProven proofHexCharG)
 
+  fileClassUnits <- runPure "unit/file-class-cases"
+    (unitClassifyRaw
+      && unitClassifyZst
+      && unitClassifyLz
+      && unitClassifyBadLz
+      && unitClassifyBadZst
+      && unitClassifyRandom
+      && unitClassifyEmpty
+      && unitClassifyHidden)
+
   genValid <- runPure "property/gen-uuid-valid-200-seeds"
     (propertyMany propertyGenUUIDValid rounds)
   validateRt <- runPure "property/validate-uuid-roundtrip-200-seeds"
@@ -343,6 +406,7 @@ main = do
   let failures = timeUnitProofs + parseTimeUnitProofs + parseDurationUnits
         + roundtrip + monotonicity + zeroDur + bareMinutes
         + uuidUnits + hexCharProofs
+        + fileClassUnits
         + genValid + validateRt + nonHexRej
   putStrLn ("failures: " ++ show failures)
   if failures == 0
