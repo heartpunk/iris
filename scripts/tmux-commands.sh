@@ -240,7 +240,7 @@ for file in "${files[@]}"; do
       # full_subcommand = subcommand + remaining args
       full_sub="$rest"
       # Trim trailing whitespace
-      full_sub="${full_sub%"${full_sub##*[! ]}"}"
+      full_sub="${full_sub%"${full_sub##*[^ ]}"}"
 
       # Write as tab-separated values (avoids SQL escaping issues)
       # Replace any tabs in values with spaces to avoid TSV corruption
@@ -250,7 +250,7 @@ for file in "${files[@]}"; do
         "$base" "$frame_num" "$ts" "$tsv_cmd" "$subcmd" "$tsv_fullsub" >> "$TSV_BATCH_FILE"
 
       file_matches=$((file_matches + 1))
-    done < <(printf '%s' "$payload" | grep -oE 'tmux( +-[A-Za-z0-9]+)*( +[a-z][-a-z]*)( +-[A-Za-z]+ +[^ ]+| +-[A-Za-z]+| +[a-zA-Z][-a-zA-Z./~_]*)*' || true)
+    done < <(printf '%s' "$payload" | grep -oE '(^|[^a-zA-Z])tmux( +-[A-Za-z0-9]+)*( +[a-z][-a-z]*)( +-[A-Za-z]+ +[^ ]+| +-[A-Za-z]+| +[a-zA-Z][-a-zA-Z./~_]*)*' | sed 's/^[^t]*//' || true)
 
   done < <("$IRIS_REPLAY" dump "$file" 2>"$dump_err" | grep -i 'tmux' || true)
 
