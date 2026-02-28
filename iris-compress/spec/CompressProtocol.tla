@@ -83,6 +83,62 @@ VerifyOutput(w) ==
         /\ UNCHANGED <<originalExists, compressedExists>>
 
 \* ===========================================================================
+\* Failure and Cleanup Actions
+\* ===========================================================================
+
+\* Compression or verification fails — worker releases the file.
+CompressFail(w) ==
+    /\ workerState[w] \in {"compressing", "verifying"}
+    /\ workerFile[w] /= NULL
+    /\ LET f == workerFile[w] IN
+        /\ fileState' = [fileState EXCEPT ![f] = "failed"]
+        /\ workerState' = [workerState EXCEPT ![w] = "idle"]
+        /\ workerFile' = [workerFile EXCEPT ![w] = NULL]
+        /\ UNCHANGED <<originalExists, compressedExists>>
+
+\* Delete the original file after successful compression and verification.
+DeleteOriginal(f) ==
+    /\ fileState[f] = "compressed"
+    /\ originalExists[f] = TRUE
+    /\ originalExists' = [originalExists EXCEPT ![f] = FALSE]
+    /\ UNCHANGED <<fileState, workerState, workerFile, compressedExists>>
+
+\* Clean up a partial .lz file from a failed compression.
+CleanupFailed(f) ==
+    /\ fileState[f] = "failed"
+    /\ compressedExists[f] = TRUE
+    /\ compressedExists' = [compressedExists EXCEPT ![f] = FALSE]
+    /\ fileState' = [fileState EXCEPT ![f] = "cleaned"]
+    /\ UNCHANGED <<workerState, workerFile, originalExists>>
+
+\* A cleaned file can be retried.
+RetryFile(f) ==
+    /\ fileState[f] = "cleaned"
+    /\ originalExists[f] = TRUE
+    /\ fileState' = [fileState EXCEPT ![f] = "raw"]
+    /\ UNCHANGED <<workerState, workerFile, originalExists, compressedExists>>
+
+\* ===========================================================================
+\* Safety Invariants
+\* ===========================================================================
+
+\* No data loss: if original is gone, compressed must exist.
+NoDataLoss ==
+    \A f \in Files :
+        ~originalExists[f] => compressedExists[f]
+
+\* No corruption: a file marked "compressed" must have .lz on disk.
+NoCorruption ==
+    \A f \in Files :
+        fileState[f] = "compressed" => compressedExists[f]
+
+\* No duplicate work: at most one worker per file.
+NoDuplicateWork ==
+    \A w1, w2 \in Workers :
+        (w1 /= w2 /\ workerFile[w1] /= NULL)
+            => workerFile[w1] /= workerFile[w2]
+
+\* ===========================================================================
 \* Next-State Relation
 \* ===========================================================================
 
@@ -90,6 +146,10 @@ Next ==
     \/ \E w \in Workers, f \in Files : PickUpFile(w, f)
     \/ \E w \in Workers : CompressComplete(w)
     \/ \E w \in Workers : VerifyOutput(w)
+    \/ \E w \in Workers : CompressFail(w)
+    \/ \E f \in Files : DeleteOriginal(f)
+    \/ \E f \in Files : CleanupFailed(f)
+    \/ \E f \in Files : RetryFile(f)
 
 Spec == Init /\ [][Next]_vars
 
