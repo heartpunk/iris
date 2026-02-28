@@ -1,4 +1,4 @@
-Iris — a terminal multiplexer written in Idris 2
+Iris — terminal session recording and tmux dispatch tools in Idris 2
 Copyright (C) 2026 Sophie Smithburg
 
 This program is free software: you can redistribute it and/or modify

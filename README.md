@@ -1,6 +1,6 @@
 # Iris
 
-A terminal multiplexer written in Idris 2. Currently stringly typed and working towards formal specification.
+Terminal session recording and tmux dispatch tools in Idris 2, working towards becoming a formally-specified terminal multiplexer. Currently stringly typed.
 
 ## Packages
 
