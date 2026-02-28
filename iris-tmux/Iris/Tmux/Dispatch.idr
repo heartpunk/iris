@@ -94,3 +94,7 @@ tmuxAttachSession : (name : String) -> IO (Either String ())
 tmuxAttachSession name = do
   result <- runTmux ["attach-session", "-t", name]
   pure (map (const ()) result)
+
+public export
+tmuxKillServer : IO (Either String ())
+tmuxKillServer = map (map (const ())) (runTmux ["kill-server"])

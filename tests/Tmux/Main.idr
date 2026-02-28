@@ -15,6 +15,12 @@ formatFailure msg = do
   putStrLn ("iris-tmux-tests: FAIL: " ++ msg)
   exitWith (ExitFailure 1)
 
+testKillServer : IO ()
+testKillServer = do
+  -- kill-server is destructive; just verify it compiles and returns Either
+  let _ : IO (Either String ()) = tmuxKillServer
+  putStrLn "iris-tmux-tests: kill-server: ok (typecheck only)"
+
 testAttachSession : IO ()
 testAttachSession = do
   result <- tmuxAttachSession "iris-nonexistent-session"
@@ -80,3 +86,5 @@ main = do
   testListSessions
   -- test: tmuxAttachSession
   testAttachSession
+  -- test: tmuxKillServer
+  testKillServer
