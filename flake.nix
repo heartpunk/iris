@@ -24,6 +24,7 @@
               pkgs.idris2
               pkgs."ovh-ttyrec"
               pkgs.ipbt
+              pkgs.lzip
             ];
           };
         });

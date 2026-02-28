@@ -1,7 +1,9 @@
 module Iris.Replay.CLI
 
 import Data.Buffer
+import Data.String
 import Iris.Core.Frame
+import Iris.Replay.Decompress
 import Iris.Replay.Replay
 import Iris.Replay.Search
 import Iris.Replay.Ttyrec.Parse
@@ -14,14 +16,47 @@ usage =
   "  replay <path>          Replay a ttyrec to stdout\n" ++
   "  search <path> <query>  Search frame payload content\n" ++
   "  info <path>            Print basic frame stats\n" ++
-  "  dump <path>            Dump each frame with index, timestamp, length, and content"
+  "  dump <path>            Dump each frame with index, timestamp, length, and content\n" ++
+  "\n" ++
+  "options:\n" ++
+  "  --force-decompression=<alg>  Override auto-detection (lzip|gzip|zstd|xz|bzip2|none)"
 
 normalizeArgs : List String -> List String
 normalizeArgs [] = []
 normalizeArgs all@(arg0 :: rest) =
   if arg0 == "replay" || arg0 == "search" || arg0 == "info" || arg0 == "dump"
+       || arg0 == "--help" || arg0 == "-h" || isPrefixOf "--force-decompression=" arg0
     then all
     else rest
+
+data ForceDecompResult = NotForceDecomp | InvalidAlg String | ValidAlg Compression
+
+forceDecompPrefix : String
+forceDecompPrefix = "-" ++ "-force-decompression="
+
+forceDecompPrefixLen : Nat
+forceDecompPrefixLen = 22
+
+parseForceDecomp : String -> ForceDecompResult
+parseForceDecomp arg =
+  if isPrefixOf forceDecompPrefix arg
+    then let value = substr forceDecompPrefixLen (minus (length arg) forceDecompPrefixLen) arg
+          in case parseCompression value of
+               Just alg => ValidAlg alg
+               Nothing => InvalidAlg value
+    else NotForceDecomp
+
+extractForceDecompression : List String -> Either String (Maybe Compression, List String)
+extractForceDecompression args = go [] args
+  where
+    go : List String -> List String -> Either String (Maybe Compression, List String)
+    go acc [] = Right (Nothing, reverse acc)
+    go acc (arg :: rest) =
+      case parseForceDecomp arg of
+        ValidAlg alg => Right (Just alg, reverse acc ++ rest)
+        InvalidAlg value => Left ("unknown decompression algorithm: " ++ value
+          ++ "; expected one of: lzip, gzip, zstd, xz, bzip2, none")
+        NotForceDecomp => go (arg :: acc) rest
 
 formatParseError : ParseError -> String
 formatParseError err =
@@ -75,8 +110,8 @@ repeatChar : Nat -> Char -> List Char
 repeatChar Z _ = []
 repeatChar (S k) ch = ch :: repeatChar k ch
 
-padLeft : Nat -> Char -> String -> String
-padLeft width pad text =
+padLeftWith : Nat -> Char -> String -> String
+padLeftWith width pad text =
   let chars = unpack text
       missing = minus width (length chars)
    in pack (repeatChar missing pad ++ chars)
@@ -86,7 +121,7 @@ formatTimestampMicros : Integer -> String
 formatTimestampMicros micros =
   let secVal = micros `div` 1000000
       usecVal = micros `mod` 1000000
-   in show secVal ++ "." ++ padLeft 6 '0' (show usecVal)
+   in show secVal ++ "." ++ padLeftWith 6 '0' (show usecVal)
 
 formatMatch : FrameMatch -> String
 formatMatch match =
@@ -106,16 +141,16 @@ exitWithMessage msg = do
   putStrLn msg
   exitWith (ExitFailure 1)
 
-runReplay : String -> IO ()
-runReplay path = do
-  result <- replayFile path
+runReplay : String -> Maybe Compression -> IO ()
+runReplay path override = do
+  result <- replayFile path override
   case result of
     Left err => exitWithMessage err
     Right () => pure ()
 
-runSearch : String -> String -> IO ()
-runSearch path query = do
-  parsed <- parseFile path
+runSearch : String -> String -> Maybe Compression -> IO ()
+runSearch path query override = do
+  parsed <- parseFile path override
   case parsed of
     Left err => exitWithMessage (formatParseError err)
     Right frames => do
@@ -140,48 +175,60 @@ printDumpLines idx (frame :: rest) = do
   putStrLn (formatDumpLine idx frame)
   printDumpLines (S idx) rest
 
-runDump : String -> IO ()
-runDump path = do
-  parsed <- parseFile path
+runDump : String -> Maybe Compression -> IO ()
+runDump path override = do
+  parsed <- parseFile path override
   case parsed of
     Left err => exitWithMessage (formatParseError err)
     Right frames => printDumpLines 0 frames
 
-runInfo : String -> IO ()
-runInfo path = do
-  parsed <- parseFile path
-  case parsed of
-    Left err => exitWithMessage (formatParseError err)
-    Right frames => do
-      loaded <- createBufferFromFile path
-      case loaded of
-        Left err => exitWithMessage ("failed to read ttyrec file: " ++ show err)
-        Right buffer => do
-          size <- rawSize buffer
-          putStrLn ("frames: " ++ show (length frames))
-          putStrLn ("file-size: " ++ show size)
-          case timestampBounds frames of
-            Nothing => do
-              putStrLn "timestamp-range: n/a"
-              putStrLn "duration-us: 0"
-            Just (startMicros, endMicros) => do
-              putStrLn ("timestamp-range: " ++ formatTimestampMicros startMicros ++ ".." ++ formatTimestampMicros endMicros)
-              putStrLn ("duration-us: " ++ show (endMicros - startMicros))
+runInfo : String -> Maybe Compression -> IO ()
+runInfo path override = do
+  decompResult <- decompressFile path override
+  case decompResult of
+    Left err => exitWithMessage err
+    Right result => do
+      parsed <- parseFile (decompressedPath result) (Just Uncompressed)
+      case parsed of
+        Left err => do
+          cleanupDecompressed result
+          exitWithMessage (formatParseError err)
+        Right frames => do
+          loaded <- createBufferFromFile (decompressedPath result)
+          case loaded of
+            Left err => do
+              cleanupDecompressed result
+              exitWithMessage ("failed to read ttyrec file: " ++ show err)
+            Right buffer => do
+              size <- rawSize buffer
+              putStrLn ("frames: " ++ show (length frames))
+              putStrLn ("file-size: " ++ show size)
+              case timestampBounds frames of
+                Nothing => do
+                  putStrLn "timestamp-range: n/a"
+                  putStrLn "duration-us: 0"
+                Just (startMicros, endMicros) => do
+                  putStrLn ("timestamp-range: " ++ formatTimestampMicros startMicros ++ ".." ++ formatTimestampMicros endMicros)
+                  putStrLn ("duration-us: " ++ show (endMicros - startMicros))
+              cleanupDecompressed result
 
 public export
 main : IO ()
 main = do
   rawArgs <- getArgs
   let args = normalizeArgs rawArgs
-  case args of
-    ["--help"] => do
-      putStrLn usage
-      exitWith ExitSuccess
-    ["-h"] => do
-      putStrLn usage
-      exitWith ExitSuccess
-    ["replay", path] => runReplay path
-    ["search", path, query] => runSearch path query
-    ["info", path] => runInfo path
-    ["dump", path] => runDump path
-    _ => exitWithMessage usage
+  case extractForceDecompression args of
+    Left err => exitWithMessage err
+    Right (override, cmdArgs) =>
+      case cmdArgs of
+        ["--help"] => do
+          putStrLn usage
+          exitWith ExitSuccess
+        ["-h"] => do
+          putStrLn usage
+          exitWith ExitSuccess
+        ["replay", path] => runReplay path override
+        ["search", path, query] => runSearch path query override
+        ["info", path] => runInfo path override
+        ["dump", path] => runDump path override
+        _ => exitWithMessage usage

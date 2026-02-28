@@ -2,6 +2,7 @@ module Iris.Replay.Replay
 
 import Data.Buffer
 import Iris.Core.Frame
+import Iris.Replay.Decompress
 import Iris.Replay.Ttyrec.Parse
 import System.File
 
@@ -46,9 +47,9 @@ replayUntimed : List Frame -> IO (Either String ())
 replayUntimed frames = writePayload (collectPayloads frames)
 
 public export
-replayFile : String -> IO (Either String ())
-replayFile path = do
-  parsed <- parseFile path
+replayFile : String -> Maybe Compression -> IO (Either String ())
+replayFile path override = do
+  parsed <- parseFile path override
   case parsed of
     Left err => pure (Left (formatParseError err))
     Right frames => replayUntimed frames

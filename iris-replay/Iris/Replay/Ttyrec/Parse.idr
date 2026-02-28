@@ -3,6 +3,7 @@ module Iris.Replay.Ttyrec.Parse
 import Data.Buffer
 import Data.List
 import Iris.Core.Frame
+import public Iris.Replay.Decompress
 import System.File
 import System.File.Buffer
 
@@ -88,11 +89,19 @@ parseBufferAt buffer size offset acc =
                 (MkFrame secVal usecVal payloadBytes :: acc)
 
 public export
-parseFile : String -> IO (Either ParseError (List Frame))
-parseFile path = do
-  loaded <- createBufferFromFile path
-  case loaded of
-    Left err => pure (Left (MkParseError 0 ("failed to read ttyrec file: " ++ show err)))
-    Right buffer => do
-      size <- rawSize buffer
-      parseBufferAt buffer size 0 []
+parseFile : String -> Maybe Compression -> IO (Either ParseError (List Frame))
+parseFile path override = do
+  decompResult <- decompressFile path override
+  case decompResult of
+    Left err => pure (Left (MkParseError 0 err))
+    Right result => do
+      loaded <- createBufferFromFile (decompressedPath result)
+      case loaded of
+        Left err => do
+          cleanupDecompressed result
+          pure (Left (MkParseError 0 ("failed to read ttyrec file: " ++ show err)))
+        Right buffer => do
+          size <- rawSize buffer
+          parsed <- parseBufferAt buffer size 0 []
+          cleanupDecompressed result
+          pure parsed

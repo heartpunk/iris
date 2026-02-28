@@ -357,7 +357,7 @@ integrationFixturePath = "tests/fixtures/sample.ttyrec"
 
 integrationRealFile : IO Bool
 integrationRealFile = do
-  parsed <- parseFile integrationFixturePath
+  parsed <- parseFile integrationFixturePath Nothing
   case parsed of
     Left _ => pure False
     Right frames =>
@@ -375,7 +375,7 @@ writerRoundtripFile = do
   case wrote of
     Left _ => pure False
     Right () => do
-      parsed <- parseFile writerRoundtripPath
+      parsed <- parseFile writerRoundtripPath Nothing
       pure (parsedFramesEqual frames parsed)
 
 runPure : String -> Bool -> IO Nat

@@ -7,7 +7,7 @@ IRIS_REPLAY_BIN="${IRIS_REPLAY_BIN:-$ROOT_DIR/iris-replay/build/exec/iris-replay
 
 usage() {
   cat <<'EOF'
-Usage: tests/cli-regressions.sh [--test replay-byte-safety|record-byte-safety|record-timestamps|search-output|search-zero-matches|info-output|dump-output|empty-file|raw-byte-roundtrip|exit-codes|help-flags]
+Usage: tests/cli-regressions.sh [--test replay-byte-safety|record-byte-safety|record-timestamps|search-output|search-zero-matches|info-output|dump-output|empty-file|raw-byte-roundtrip|exit-codes|help-flags|compressed-roundtrip|compression-mismatch]
 EOF
 }
 
@@ -42,6 +42,7 @@ require_cmd xxd
 require_cmd wc
 require_cmd cmp
 require_cmd grep
+require_cmd lzip
 
 if [[ ! -x "$IRIS_REC_BIN" ]]; then
   echo "missing binary: $IRIS_REC_BIN" >&2
@@ -654,6 +655,111 @@ run_help_flags() {
   return "$failures"
 }
 
+run_compressed_roundtrip() {
+  local tmp_dir="$1"
+  local payload_file="$tmp_dir/comp-payload.txt"
+  local ttyrec_file="$tmp_dir/comp-input.ttyrec"
+  local lz_file="$tmp_dir/comp-input.ttyrec.lz"
+  local replay_raw="$tmp_dir/comp-replay-raw.bin"
+  local replay_lz="$tmp_dir/comp-replay-lz.bin"
+  local search_raw="$tmp_dir/comp-search-raw.txt"
+  local search_lz="$tmp_dir/comp-search-lz.txt"
+  local info_raw="$tmp_dir/comp-info-raw.txt"
+  local info_lz="$tmp_dir/comp-info-lz.txt"
+  local dump_raw="$tmp_dir/comp-dump-raw.txt"
+  local dump_lz="$tmp_dir/comp-dump-lz.txt"
+
+  printf 'hello needle world\n' > "$payload_file"
+  make_single_frame_ttyrec "$payload_file" "$ttyrec_file" 17 420
+
+  lzip -k "$ttyrec_file"
+
+  "$IRIS_REPLAY_BIN" replay "$ttyrec_file" > "$replay_raw"
+  "$IRIS_REPLAY_BIN" search "$ttyrec_file" "needle" > "$search_raw"
+  "$IRIS_REPLAY_BIN" info "$ttyrec_file" > "$info_raw"
+  "$IRIS_REPLAY_BIN" dump "$ttyrec_file" > "$dump_raw"
+
+  "$IRIS_REPLAY_BIN" replay "$lz_file" > "$replay_lz"
+  "$IRIS_REPLAY_BIN" search "$lz_file" "needle" > "$search_lz"
+  "$IRIS_REPLAY_BIN" info "$lz_file" > "$info_lz"
+  "$IRIS_REPLAY_BIN" dump "$lz_file" > "$dump_lz"
+
+  if ! cmp -s "$replay_raw" "$replay_lz"; then
+    echo "FAIL compressed-roundtrip replay output differs"
+    return 1
+  fi
+
+  if ! cmp -s "$search_raw" "$search_lz"; then
+    echo "FAIL compressed-roundtrip search output differs"
+    return 1
+  fi
+
+  if ! cmp -s "$info_raw" "$info_lz"; then
+    echo "FAIL compressed-roundtrip info output differs"
+    return 1
+  fi
+
+  if ! cmp -s "$dump_raw" "$dump_lz"; then
+    echo "FAIL compressed-roundtrip dump output differs"
+    return 1
+  fi
+
+  echo "PASS compressed-roundtrip"
+  return 0
+}
+
+run_compression_mismatch() {
+  local tmp_dir="$1"
+  local payload_file="$tmp_dir/mismatch-payload.txt"
+  local ttyrec_file="$tmp_dir/mismatch-input.ttyrec"
+  local fake_lz="$tmp_dir/mismatch-input.lz"
+  local output_file="$tmp_dir/mismatch-output.txt"
+  local replay_output="$tmp_dir/mismatch-replay.bin"
+  local raw_replay="$tmp_dir/mismatch-raw-replay.bin"
+
+  printf 'mismatch test data\n' > "$payload_file"
+  make_single_frame_ttyrec "$payload_file" "$ttyrec_file" 17 420
+
+  cp "$ttyrec_file" "$fake_lz"
+
+  set +e
+  "$IRIS_REPLAY_BIN" replay "$fake_lz" > "$output_file" 2>&1
+  local status=$?
+  set -e
+
+  if [[ "$status" -eq 0 ]]; then
+    echo "FAIL compression-mismatch should have failed but succeeded"
+    return 1
+  fi
+
+  if ! grep -q "cowardly refuse" "$output_file"; then
+    echo "FAIL compression-mismatch missing 'cowardly refuse' message"
+    cat "$output_file"
+    return 1
+  fi
+
+  set +e
+  "$IRIS_REPLAY_BIN" --force-decompression=none replay "$fake_lz" > "$replay_output" 2>&1
+  status=$?
+  set -e
+
+  if [[ "$status" -ne 0 ]]; then
+    echo "FAIL compression-mismatch --force-decompression=none should succeed"
+    cat "$replay_output"
+    return 1
+  fi
+
+  "$IRIS_REPLAY_BIN" replay "$ttyrec_file" > "$raw_replay"
+
+  if ! cmp -s "$raw_replay" "$replay_output"; then
+    echo "FAIL compression-mismatch --force-decompression=none output differs"
+    return 1
+  fi
+
+  echo "PASS compression-mismatch"
+  return 0
+}
+
 main() {
   tmp_dir="$(mktemp -d /tmp/iris-cli-regressions.XXXXXX)"
   trap 'rm -rf "$tmp_dir"' EXIT
@@ -673,6 +779,8 @@ main() {
       run_raw_byte_roundtrip "$tmp_dir" || failures=$((failures + 1))
       run_exit_codes "$tmp_dir" || failures=$((failures + 1))
       run_help_flags || failures=$((failures + 1))
+      run_compressed_roundtrip "$tmp_dir" || failures=$((failures + 1))
+      run_compression_mismatch "$tmp_dir" || failures=$((failures + 1))
       ;;
     "replay-byte-safety")
       run_replay_byte_safety "$tmp_dir" || failures=$((failures + 1))
@@ -706,6 +814,12 @@ main() {
       ;;
     "help-flags")
       run_help_flags || failures=$((failures + 1))
+      ;;
+    "compressed-roundtrip")
+      run_compressed_roundtrip "$tmp_dir" || failures=$((failures + 1))
+      ;;
+    "compression-mismatch")
+      run_compression_mismatch "$tmp_dir" || failures=$((failures + 1))
       ;;
     *)
       echo "unknown test: $selected_test" >&2
