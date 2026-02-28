@@ -330,6 +330,48 @@ propertyNonHexRejected seedNat =
         then c :: replaceAt (S k) rest  -- skip hyphens, don't count them
         else c :: replaceAt k rest
 
+-- ==========================================================================
+-- FileClass property tests
+-- ==========================================================================
+
+-- Property: classifyFile on a bare generated UUID is RawTtyrec.
+propertyClassifyRaw : Nat -> Bool
+propertyClassifyRaw seedNat =
+  let (u, _) = genUUID (cast seedNat)
+   in case classifyFile u of
+        RawTtyrec _ => True
+        _ => False
+
+-- Property: classifyFile on UUID.ttyrec.zst is ZstTtyrec.
+propertyClassifyZst : Nat -> Bool
+propertyClassifyZst seedNat =
+  let (u, _) = genUUID (cast seedNat)
+   in case classifyFile (u ++ ".ttyrec.zst") of
+        ZstTtyrec _ => True
+        _ => False
+
+-- Property: classifyFile on UUID.lz is AlreadyCompressed.
+propertyClassifyLz : Nat -> Bool
+propertyClassifyLz seedNat =
+  let (u, _) = genUUID (cast seedNat)
+   in case classifyFile (u ++ ".lz") of
+        AlreadyCompressed _ => True
+        _ => False
+
+-- Property: classifyFile preserves the UUID in all recognized variants.
+propertyClassifyPreservesUUID : Nat -> Bool
+propertyClassifyPreservesUUID seedNat =
+  let (u, _) = genUUID (cast seedNat)
+   in case classifyFile u of
+        RawTtyrec v => uuid v == u
+        _ => False
+      && case classifyFile (u ++ ".ttyrec.zst") of
+           ZstTtyrec v => uuid v == u
+           _ => False
+      && case classifyFile (u ++ ".lz") of
+           AlreadyCompressed v => uuid v == u
+           _ => False
+
 public export
 main : IO ()
 main = do
@@ -403,11 +445,21 @@ main = do
   nonHexRej <- runPure "property/non-hex-rejected-200-seeds"
     (propertyMany propertyNonHexRejected rounds)
 
+  classifyRaw <- runPure "property/classify-raw-200-seeds"
+    (propertyMany propertyClassifyRaw rounds)
+  classifyZst <- runPure "property/classify-zst-200-seeds"
+    (propertyMany propertyClassifyZst rounds)
+  classifyLz <- runPure "property/classify-lz-200-seeds"
+    (propertyMany propertyClassifyLz rounds)
+  classifyUUID <- runPure "property/classify-preserves-uuid-200-seeds"
+    (propertyMany propertyClassifyPreservesUUID rounds)
+
   let failures = timeUnitProofs + parseTimeUnitProofs + parseDurationUnits
         + roundtrip + monotonicity + zeroDur + bareMinutes
         + uuidUnits + hexCharProofs
         + fileClassUnits
         + genValid + validateRt + nonHexRej
+        + classifyRaw + classifyZst + classifyLz + classifyUUID
   putStrLn ("failures: " ++ show failures)
   if failures == 0
     then pure ()
