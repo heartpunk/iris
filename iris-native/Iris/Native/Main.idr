@@ -4,6 +4,7 @@ import Data.IORef
 import Data.String
 import Iris.Native.Command
 import Iris.Native.EventLoop
+import Iris.Native.FFI.Fifo
 import Iris.Native.FFI.Pty
 import Iris.Native.FFI.Signal
 import Iris.Native.FFI.Terminal
@@ -40,12 +41,15 @@ serveMode = do
         putStrLn "iris-native: failed to enter raw mode"
         exitWith (ExitFailure 1)
 
-      -- Set up control pipe path (don't create the FIFO in v0)
+      -- Create control FIFO
       ctlPath <- mkCtlPipePath
+      _ <- mkFifo ctlPath
+      ctlFd <- openRdOnlyNonblock ctlPath
 
       -- Set IRIS_CTL env var for child processes
       True <- setEnv "IRIS_CTL" ctlPath True
-        | False => do _ <- restoreTerminal
+        | False => do _ <- unlinkFile ctlPath
+                      _ <- restoreTerminal
                       putStrLn "iris-native: failed to set IRIS_CTL"
                       exitWith (ExitFailure 1)
 
@@ -69,7 +73,7 @@ serveMode = do
             , termCols     = cast cols
             , termRows     = cast rows
             , ctlPipePath  = ctlPath
-            , ctlPipeFd    = -1  -- no control pipe fd in v0
+            , ctlPipeFd    = ctlFd
             , running      = True
             }
 
@@ -84,7 +88,8 @@ serveMode = do
       -- Run event loop
       eventLoop stRef
 
-      -- Restore terminal on exit
+      -- Cleanup: unlink FIFO, restore terminal
+      _ <- unlinkFile ctlPath
       _ <- restoreTerminal
       putStr (exitAltScreen ++ showCursor)
 

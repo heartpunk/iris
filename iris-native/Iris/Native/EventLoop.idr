@@ -122,6 +122,10 @@ checkSignals stRef = do
         modifyIORef stRef (\s => { panes := updatePane p.paneId
           (\pp => { closed := True } pp) s.panes } s)
       ) (filter (not . (.closed)) st.panes)
+    -- Check if all panes are now closed
+    st2 <- readIORef stRef
+    when (all (.closed) st2.panes) $
+      modifyIORef stRef (\s => { running := False } s)
   -- SIGWINCH: resize PTYs to match new terminal dimensions
   winchFired <- signalCheckWinch
   when winchFired $ do

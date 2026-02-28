@@ -10,7 +10,8 @@ depends    = base
 main       = Iris.Native.Main
 executable = iris-native
 
-modules    = Iris.Native.Backend
+modules    = Iris.Native.FFI.Fifo
+           , Iris.Native.Backend
            , Iris.Native.Command
            , Iris.Native.EventLoop
            , Iris.Native.FFI.Poll
