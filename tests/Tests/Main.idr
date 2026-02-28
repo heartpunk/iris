@@ -71,6 +71,24 @@ isParseErrorAt : Nat -> Either ParseError (List Frame) -> Bool
 isParseErrorAt expectedOffset (Left err) = offset err == expectedOffset
 isParseErrorAt _ _ = False
 
+-- Reference list indexing function. Used both as a proof target for frameAt
+-- and as an oracle in property tests.
+listAt : Nat -> List a -> Maybe a
+listAt _ [] = Nothing
+listAt Z (x :: _) = Just x
+listAt (S k) (_ :: xs) = listAt k xs
+
+-- Takes an equality proof; always True at runtime.
+-- Compilation verifies the proof holds (type checker rejects Refl if not).
+isProven : a = b -> Bool
+isProven _ = True
+
+-- Maybe Frame comparison without requiring Eq Frame.
+maybeFrameEq : Maybe Frame -> Maybe Frame -> Bool
+maybeFrameEq Nothing Nothing = True
+maybeFrameEq (Just f) (Just g) = sameFrame f g
+maybeFrameEq _ _ = False
+
 unitFixedFrame : Bool
 unitFixedFrame =
   let frame = MkFrame 1 123 [toByte 65, toByte 66, toByte 67]
@@ -301,6 +319,127 @@ propertyCollectPayloadsConcat seedNat =
       (frames, _) = generateFrames frameCount seed
    in collectPayloads frames == concatPayloads frames
 
+-- ==========================================================================
+-- frameAt proofs (compile-time verified by Idris 2's type checker)
+-- ==========================================================================
+
+-- Proof: frameAt on the empty list is Nothing for all indices.
+frameAtNil : (idx : Nat) -> frameAt idx (the (List Frame) []) = Nothing
+frameAtNil _ = Refl
+
+-- Proof: frameAt Z returns the head of a non-empty list.
+frameAtHead : (f : Frame) -> (fs : List Frame) -> frameAt Z (f :: fs) = Just f
+frameAtHead _ _ = Refl
+
+-- Proof (structural induction): frameAt is definitionally equal to the
+-- reference listAt on all inputs.  This is the correctness theorem.
+frameAtIsListAt : (idx : Nat) -> (frames : List Frame) ->
+                  frameAt idx frames = listAt idx frames
+frameAtIsListAt _ [] = Refl
+frameAtIsListAt Z (_ :: _) = Refl
+frameAtIsListAt (S k) (_ :: rest) = frameAtIsListAt k rest
+
+-- ==========================================================================
+-- parseNat proofs (compile-time verified by computation)
+-- Idris evaluates parseNat on each literal and confirms the result matches.
+-- If any Refl is wrong the file will not compile.
+-- ==========================================================================
+
+proofParseNatEmpty : parseNat "" = Nothing
+proofParseNatEmpty = Refl
+
+proofParseNatZero : parseNat "0" = Just 0
+proofParseNatZero = Refl
+
+proofParseNatOne : parseNat "1" = Just 1
+proofParseNatOne = Refl
+
+proofParseNatNine : parseNat "9" = Just 9
+proofParseNatNine = Refl
+
+proofParseNatFortytwo : parseNat "42" = Just 42
+proofParseNatFortytwo = Refl
+
+proofParseNatHundred : parseNat "100" = Just 100
+proofParseNatHundred = Refl
+
+-- Four-digit value: exercises multi-step foldl accumulation without
+-- blowing up the type checker (Nat is unary, so 10-digit values hang).
+proofParseNat9999 : parseNat "9999" = Just 9999
+proofParseNat9999 = Refl
+
+-- Leading zeros parse to the numeric value (not rejected, not misread).
+proofParseNatLeadingZeros : parseNat "007" = Just 7
+proofParseNatLeadingZeros = Refl
+
+-- Non-digit characters rejected at every position.
+proofParseNatAlpha : parseNat "a" = Nothing
+proofParseNatAlpha = Refl
+
+proofParseNatMixed : parseNat "12x3" = Nothing
+proofParseNatMixed = Refl
+
+proofParseNatNegative : parseNat "-1" = Nothing
+proofParseNatNegative = Refl
+
+proofParseNatDot : parseNat "3.14" = Nothing
+proofParseNatDot = Refl
+
+proofParseNatSpace : parseNat "1 2" = Nothing
+proofParseNatSpace = Refl
+
+-- ==========================================================================
+-- frameAt property tests
+-- ==========================================================================
+
+-- frameAt and listAt agree for any (idx, frames) pair — runtime sampling
+-- across LCG seeds.  Logically redundant with frameAtIsListAt but covers
+-- the runtime code path.
+propertyFrameAtEqualsListAt : Nat -> Bool
+propertyFrameAtEqualsListAt seedNat =
+  let seed = cast seedNat
+      frameCount = frameCountForSeed seed
+      (frames, s1) = generateFrames frameCount seed
+      (idxNat, _) = randomU32 s1
+      idx = cast idxNat
+   in maybeFrameEq (frameAt idx frames) (listAt idx frames)
+
+-- frameAt exactly at length is always Nothing (one past end).
+propertyFrameAtExactlyOutOfBounds : Nat -> Bool
+propertyFrameAtExactlyOutOfBounds seedNat =
+  let seed = cast seedNat
+      frameCount = frameCountForSeed seed
+      (frames, _) = generateFrames frameCount seed
+   in case frameAt (length frames) frames of
+            Nothing => True
+            Just _ => False
+
+-- For a valid in-bounds index, frameAt and listAt agree.
+propertyFrameAtInBoundsMatchesListAt : Nat -> Bool
+propertyFrameAtInBoundsMatchesListAt seedNat =
+  let seed = cast seedNat
+      frameCount = frameCountForSeed seed
+      (frames, s1) = generateFrames frameCount seed
+      (idxNat, _) = randomU32 s1
+      idx = cast (the Integer (cast idxNat `mod` cast frameCount))
+   in maybeFrameEq (frameAt idx frames) (listAt idx frames)
+
+-- ==========================================================================
+-- parseNat property tests
+-- ==========================================================================
+
+-- Roundtrip: parsing the decimal representation of any Nat recovers it.
+propertyParseNatRoundtrip : Nat -> Bool
+propertyParseNatRoundtrip seedNat =
+  let (n, _) = randomU32 (cast seedNat)
+   in parseNat (show n) == Just n
+
+-- Appending a non-digit to any valid decimal string gives Nothing.
+propertyParseNatNonDigitSuffix : Nat -> Bool
+propertyParseNatNonDigitSuffix seedNat =
+  let (n, _) = randomU32 (cast seedNat)
+   in parseNat (show n ++ "!") == Nothing
+
 readBufferBytes : Buffer -> Int -> IO (List Bits8)
 readBufferBytes buffer size = go 0 []
   where
@@ -480,10 +619,50 @@ runPropertySuite rounds = do
   writeFidelity <- runIO
                      "property/write-fidelity-disk-vs-encode"
                      propertyWriteFidelity
+  -- Proofs: compile-time verified, reported here so they appear in output.
+  frameAtProofs <- runPure "proof/frame-at-is-list-at"
+                     (isProven (frameAtNil 0) && isProven (frameAtNil 99)
+                       && isProven (frameAtHead (MkFrame 0 0 []) [])
+                       && isProven (frameAtIsListAt 0 [])
+                       && isProven (frameAtIsListAt 3 []))
+  parseNatProofs <- runPure "proof/parse-nat-computed-cases"
+                      (isProven proofParseNatEmpty
+                        && isProven proofParseNatZero
+                        && isProven proofParseNatOne
+                        && isProven proofParseNatNine
+                        && isProven proofParseNatFortytwo
+                        && isProven proofParseNatHundred
+                        && isProven proofParseNat9999
+                        && isProven proofParseNatLeadingZeros
+                        && isProven proofParseNatAlpha
+                        && isProven proofParseNatMixed
+                        && isProven proofParseNatNegative
+                        && isProven proofParseNatDot
+                        && isProven proofParseNatSpace)
+  -- Property tests for frameAt
+  frameAtListAt <- runPure
+                     ("property/frame-at-equals-list-at-" ++ show rounds ++ "-seeds")
+                     (propertyMany propertyFrameAtEqualsListAt limit)
+  frameAtOob <- runPure
+                  ("property/frame-at-out-of-bounds-" ++ show rounds ++ "-seeds")
+                  (propertyMany propertyFrameAtExactlyOutOfBounds limit)
+  frameAtInBounds <- runPure
+                       ("property/frame-at-in-bounds-" ++ show rounds ++ "-seeds")
+                       (propertyMany propertyFrameAtInBoundsMatchesListAt limit)
+  -- Property tests for parseNat
+  parseNatRoundtrip <- runPure
+                         ("property/parse-nat-roundtrip-" ++ show rounds ++ "-seeds")
+                         (propertyMany propertyParseNatRoundtrip limit)
+  parseNatNonDigit <- runPure
+                        ("property/parse-nat-non-digit-suffix-" ++ show rounds ++ "-seeds")
+                        (propertyMany propertyParseNatNonDigitSuffix limit)
 
   pure
     (frameCount + leRoundtrip + leOutOfRange + ordering + payloadLen + headerBytes
-      + sizeLaw + concatLaw + binaryTransparency + collectConcat + writeFidelity)
+      + sizeLaw + concatLaw + binaryTransparency + collectConcat + writeFidelity
+      + frameAtProofs + parseNatProofs
+      + frameAtListAt + frameAtOob + frameAtInBounds
+      + parseNatRoundtrip + parseNatNonDigit)
 
 runPropertyOnly : Nat -> IO ()
 runPropertyOnly rounds = do

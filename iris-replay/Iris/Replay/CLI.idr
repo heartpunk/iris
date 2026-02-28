@@ -183,6 +183,7 @@ runDump path override = do
     Left err => exitWithMessage (formatParseError err)
     Right frames => printDumpLines 0 frames
 
+public export
 parseNat : String -> Maybe Nat
 parseNat s =
   case unpack s of
@@ -197,6 +198,7 @@ parseNat s =
             then Just (acc * 10 + cast d)
             else Nothing
 
+public export
 frameAt : Nat -> List Frame -> Maybe Frame
 frameAt _ [] = Nothing
 frameAt Z (frame :: _) = Just frame
