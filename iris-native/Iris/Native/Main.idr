@@ -5,6 +5,7 @@ import Data.String
 import Iris.Native.Command
 import Iris.Native.EventLoop
 import Iris.Native.FFI.Pty
+import Iris.Native.FFI.Signal
 import Iris.Native.FFI.Terminal
 import Iris.Native.Render
 import Iris.Native.State
@@ -73,6 +74,9 @@ serveMode = do
             }
 
       stRef <- newIORef initState
+
+      -- Install signal handlers
+      _ <- signalSetup
 
       -- Clear screen
       putStr clearScreen

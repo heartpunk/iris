@@ -105,6 +105,7 @@ setupPoll st = do
 ||| Check signal flags and update state accordingly.
 ||| SIGTERM/SIGINT → set running := False
 ||| SIGCHLD → mark exited panes as closed via waitpidNohang
+||| SIGWINCH → resize all PTYs to match new terminal dimensions
 checkSignals : IORef MuxState -> IO ()
 checkSignals stRef = do
   -- SIGTERM/SIGINT: graceful shutdown
@@ -121,6 +122,19 @@ checkSignals stRef = do
         modifyIORef stRef (\s => { panes := updatePane p.paneId
           (\pp => { closed := True } pp) s.panes } s)
       ) (filter (not . (.closed)) st.panes)
+  -- SIGWINCH: resize PTYs to match new terminal dimensions
+  winchFired <- signalCheckWinch
+  when winchFired $ do
+    cols <- getTermCols
+    rows <- getTermRows
+    when (cols > 0 && rows > 0) $ do
+      st <- readIORef stRef
+      modifyIORef stRef (\s => { termCols := cast cols, termRows := cast rows } s)
+      traverse_ (\p =>
+        when (not p.closed) $ do
+          _ <- ptyResize p.ptyFd cols rows
+          pure ()
+        ) st.panes
 
 ||| Single iteration of the raw byte pump for single-pane mode.
 ||| Bypasses String conversion entirely — uses stdinToFd / fdToStdout
