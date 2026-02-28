@@ -154,6 +154,9 @@ singlePaneLoopOnce stRef buf = do
           pollClear
           stdinIdx <- pollAdd 0
           ptyIdx <- pollAdd pane.ptyFd
+          ctlIdx <- if st.ctlPipeFd >= 0
+                      then pollAdd st.ctlPipeFd
+                      else pure (-1)
           nReady <- pollWait pollTimeoutMs
           checkSignals stRef
           when (nReady > 0) $ do
@@ -174,6 +177,18 @@ singlePaneLoopOnce stRef buf = do
               when (n <= 0) $
                 modifyIORef stRef (\s => { panes := updatePane pane.paneId
                   (\p => { closed := True } p) s.panes } s)
+            -- Control pipe
+            when (ctlIdx >= 0) $ do
+              ctlReady <- pollReadable ctlIdx
+              when ctlReady $ do
+                s <- readIORef stRef
+                mStr <- readFdToString s.ctlPipeFd
+                case mStr of
+                  Nothing => pure ()
+                  Just str =>
+                    case parseCommand str of
+                      Left _ => pure ()
+                      Right cmd => handleCommand stRef cmd
     _ => pure ()  -- unreachable: eventLoop dispatches multi-pane separately
 
 ||| Single-pane event loop: raw byte pump until pane exits.
