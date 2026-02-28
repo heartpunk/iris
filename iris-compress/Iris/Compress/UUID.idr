@@ -5,11 +5,6 @@ public export
 isHexChar : Char -> Bool
 isHexChar c = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')
 
-||| Check if a list of characters are all lowercase hex digits.
-allHex : List Char -> Bool
-allHex [] = True
-allHex (c :: cs) = isHexChar c && allHex cs
-
 ||| Check a segment of exactly n hex characters.
 hexSegment : Nat -> List Char -> Maybe (List Char)
 hexSegment Z rest = Just rest
