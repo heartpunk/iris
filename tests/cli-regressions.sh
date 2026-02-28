@@ -7,7 +7,7 @@ IRIS_REPLAY_BIN="${IRIS_REPLAY_BIN:-$ROOT_DIR/iris-replay/build/exec/iris-replay
 
 usage() {
   cat <<'EOF'
-Usage: tests/cli-regressions.sh [--test replay-byte-safety|record-byte-safety|record-timestamps|search-output|search-zero-matches|info-output|empty-file|raw-byte-roundtrip|exit-codes|help-flags]
+Usage: tests/cli-regressions.sh [--test replay-byte-safety|record-byte-safety|record-timestamps|search-output|search-zero-matches|info-output|dump-output|empty-file|raw-byte-roundtrip|exit-codes|help-flags]
 EOF
 }
 
@@ -354,15 +354,131 @@ run_info_output() {
   return 0
 }
 
+run_dump_output() {
+  local tmp_dir="$1"
+  local payload0="$tmp_dir/dump-payload-0.txt"
+  local payload1="$tmp_dir/dump-payload-1.txt"
+  local payload2="$tmp_dir/dump-payload-2.txt"
+  local frame0="$tmp_dir/dump-frame-0.ttyrec"
+  local frame1="$tmp_dir/dump-frame-1.ttyrec"
+  local frame2="$tmp_dir/dump-frame-2.ttyrec"
+  local ttyrec_file="$tmp_dir/dump-input.ttyrec"
+  local output_file="$tmp_dir/dump-output.txt"
+
+  printf 'hello world\n' > "$payload0"
+  printf 'line\ttwo\there\n' > "$payload1"
+  printf 'third frame\n' > "$payload2"
+
+  make_single_frame_ttyrec "$payload0" "$frame0" 10 100
+  make_single_frame_ttyrec "$payload1" "$frame1" 10 500200
+  make_single_frame_ttyrec "$payload2" "$frame2" 12 300
+
+  cat "$frame0" "$frame1" "$frame2" > "$ttyrec_file"
+
+  set +e
+  "$IRIS_REPLAY_BIN" dump "$ttyrec_file" > "$output_file" 2>&1
+  local status=$?
+  set -e
+
+  if [[ "$status" -ne 0 ]]; then
+    echo "FAIL dump-output command exited with $status"
+    cat "$output_file"
+    return 1
+  fi
+
+  local line_count
+  line_count="$(wc -l < "$output_file" | tr -d ' ')"
+  if [[ "$line_count" -ne 3 ]]; then
+    echo "FAIL dump-output expected 3 lines, got $line_count"
+    cat "$output_file"
+    return 1
+  fi
+
+  # Frame 0: index=0, ts=10.000100, len=12, payload with sanitized newline
+  if ! sed -n '1p' "$output_file" | grep -q "^frame=0 "; then
+    echo "FAIL dump-output line 1 missing frame=0"
+    cat "$output_file"
+    return 1
+  fi
+
+  if ! sed -n '1p' "$output_file" | grep -q "ts=10.000100"; then
+    echo "FAIL dump-output line 1 wrong timestamp"
+    cat "$output_file"
+    return 1
+  fi
+
+  if ! sed -n '1p' "$output_file" | grep -q "len=12"; then
+    echo "FAIL dump-output line 1 wrong payload length"
+    cat "$output_file"
+    return 1
+  fi
+
+  if ! sed -n '1p' "$output_file" | grep -q "payload=hello world"; then
+    echo "FAIL dump-output line 1 wrong payload content"
+    cat "$output_file"
+    return 1
+  fi
+
+  # Frame 1: index=1, ts=10.500200, tabs sanitized to spaces
+  if ! sed -n '2p' "$output_file" | grep -q "^frame=1 "; then
+    echo "FAIL dump-output line 2 missing frame=1"
+    cat "$output_file"
+    return 1
+  fi
+
+  if ! sed -n '2p' "$output_file" | grep -q "ts=10.500200"; then
+    echo "FAIL dump-output line 2 wrong timestamp"
+    cat "$output_file"
+    return 1
+  fi
+
+  if ! sed -n '2p' "$output_file" | grep -q "len=14"; then
+    echo "FAIL dump-output line 2 wrong payload length"
+    cat "$output_file"
+    return 1
+  fi
+
+  # Tabs should be sanitized to spaces
+  if ! sed -n '2p' "$output_file" | grep -q "payload=line two here"; then
+    echo "FAIL dump-output line 2 tabs not sanitized"
+    cat "$output_file"
+    return 1
+  fi
+
+  # Frame 2: index=2, ts=12.000300
+  if ! sed -n '3p' "$output_file" | grep -q "^frame=2 "; then
+    echo "FAIL dump-output line 3 missing frame=2"
+    cat "$output_file"
+    return 1
+  fi
+
+  if ! sed -n '3p' "$output_file" | grep -q "ts=12.000300"; then
+    echo "FAIL dump-output line 3 wrong timestamp"
+    cat "$output_file"
+    return 1
+  fi
+
+  if ! sed -n '3p' "$output_file" | grep -q "len=12"; then
+    echo "FAIL dump-output line 3 wrong payload length"
+    cat "$output_file"
+    return 1
+  fi
+
+  echo "PASS dump-output"
+  return 0
+}
+
 run_empty_file() {
   local tmp_dir="$1"
   local empty_file="$tmp_dir/empty.ttyrec"
   local replay_output="$tmp_dir/empty-replay-output.bin"
   local search_output="$tmp_dir/empty-search-output.txt"
   local info_output="$tmp_dir/empty-info-output.txt"
+  local dump_output="$tmp_dir/empty-dump-output.txt"
   local replay_status
   local search_status
   local info_status
+  local dump_status
   local replay_size
 
   : > "$empty_file"
@@ -374,6 +490,8 @@ run_empty_file() {
   search_status=$?
   "$IRIS_REPLAY_BIN" info "$empty_file" > "$info_output" 2>&1
   info_status=$?
+  "$IRIS_REPLAY_BIN" dump "$empty_file" > "$dump_output" 2>&1
+  dump_status=$?
   set -e
 
   if [[ "$replay_status" -ne 0 ]]; then
@@ -418,6 +536,20 @@ run_empty_file() {
     return 1
   fi
 
+  if [[ "$dump_status" -ne 0 ]]; then
+    echo "FAIL empty-file dump exited with $dump_status"
+    cat "$dump_output"
+    return 1
+  fi
+
+  local dump_size
+  dump_size="$(wc -c < "$dump_output" | tr -d ' ')"
+  if [[ "$dump_size" -ne 0 ]]; then
+    echo "FAIL empty-file dump produced output"
+    cat "$dump_output"
+    return 1
+  fi
+
   echo "PASS empty-file"
   return 0
 }
@@ -435,6 +567,8 @@ run_exit_codes() {
   local replay_search_status=$?
   "$IRIS_REPLAY_BIN" info "$tmp_dir/does-not-exist.ttyrec" >/dev/null 2>&1
   local replay_info_status=$?
+  "$IRIS_REPLAY_BIN" dump "$tmp_dir/does-not-exist.ttyrec" >/dev/null 2>&1
+  local replay_dump_status=$?
   "$IRIS_REC_BIN" >/dev/null 2>&1
   local rec_usage_status=$?
   "$IRIS_REC_BIN" record >/dev/null 2>&1
@@ -467,6 +601,13 @@ run_exit_codes() {
     failures=$((failures + 1))
   else
     echo "PASS exit-codes replay-info-missing-file"
+  fi
+
+  if [[ "$replay_dump_status" -eq 0 ]]; then
+    echo "FAIL exit-codes replay-dump-missing-file returned 0"
+    failures=$((failures + 1))
+  else
+    echo "PASS exit-codes replay-dump-missing-file"
   fi
 
   if [[ "$rec_usage_status" -eq 0 ]]; then
@@ -527,6 +668,7 @@ main() {
       run_search_output "$tmp_dir" || failures=$((failures + 1))
       run_search_zero_matches "$tmp_dir" || failures=$((failures + 1))
       run_info_output "$tmp_dir" || failures=$((failures + 1))
+      run_dump_output "$tmp_dir" || failures=$((failures + 1))
       run_empty_file "$tmp_dir" || failures=$((failures + 1))
       run_raw_byte_roundtrip "$tmp_dir" || failures=$((failures + 1))
       run_exit_codes "$tmp_dir" || failures=$((failures + 1))
@@ -549,6 +691,9 @@ main() {
       ;;
     "info-output")
       run_info_output "$tmp_dir" || failures=$((failures + 1))
+      ;;
+    "dump-output")
+      run_dump_output "$tmp_dir" || failures=$((failures + 1))
       ;;
     "empty-file")
       run_empty_file "$tmp_dir" || failures=$((failures + 1))

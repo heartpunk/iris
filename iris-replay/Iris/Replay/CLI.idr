@@ -13,12 +13,13 @@ usage =
   "iris-replay commands:\n" ++
   "  replay <path>          Replay a ttyrec to stdout\n" ++
   "  search <path> <query>  Search frame payload content\n" ++
-  "  info <path>            Print basic frame stats"
+  "  info <path>            Print basic frame stats\n" ++
+  "  dump <path>            Dump each frame with index, timestamp, length, and content"
 
 normalizeArgs : List String -> List String
 normalizeArgs [] = []
 normalizeArgs all@(arg0 :: rest) =
-  if arg0 == "replay" || arg0 == "search" || arg0 == "info"
+  if arg0 == "replay" || arg0 == "search" || arg0 == "info" || arg0 == "dump"
     then all
     else rest
 
@@ -122,6 +123,30 @@ runSearch path query = do
       putStrLn ("matches: " ++ show (length matches))
       printMatches matches
 
+sanitizePayload : Frame -> String
+sanitizePayload frame =
+  pack (map sanitizeChar (unpack (payloadText frame)))
+
+formatDumpLine : Nat -> Frame -> String
+formatDumpLine idx frame =
+  "frame=" ++ show idx
+    ++ " ts=" ++ formatTimestampMicros (frameTimestampMicros frame)
+    ++ " len=" ++ show (length (payload frame))
+    ++ " payload=" ++ sanitizePayload frame
+
+printDumpLines : Nat -> List Frame -> IO ()
+printDumpLines _ [] = pure ()
+printDumpLines idx (frame :: rest) = do
+  putStrLn (formatDumpLine idx frame)
+  printDumpLines (S idx) rest
+
+runDump : String -> IO ()
+runDump path = do
+  parsed <- parseFile path
+  case parsed of
+    Left err => exitWithMessage (formatParseError err)
+    Right frames => printDumpLines 0 frames
+
 runInfo : String -> IO ()
 runInfo path = do
   parsed <- parseFile path
@@ -158,4 +183,5 @@ main = do
     ["replay", path] => runReplay path
     ["search", path, query] => runSearch path query
     ["info", path] => runInfo path
+    ["dump", path] => runDump path
     _ => exitWithMessage usage

@@ -1,4 +1,5 @@
 .idris2/
+.idris2-local/
 iris-core/build/
 iris-replay/build/
 **/build/
