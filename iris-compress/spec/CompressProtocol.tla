@@ -51,10 +51,45 @@ Init ==
     /\ compressedExists = [f \in Files |-> FALSE]
 
 \* ===========================================================================
-\* Actions (placeholder — Next is stuttering only for now)
+\* Worker Actions
 \* ===========================================================================
 
-Next == UNCHANGED vars
+\* A worker picks up a raw file to compress.
+PickUpFile(w, f) ==
+    /\ workerState[w] = "idle"
+    /\ fileState[f] = "raw"
+    /\ workerState' = [workerState EXCEPT ![w] = "compressing"]
+    /\ workerFile' = [workerFile EXCEPT ![w] = f]
+    /\ fileState' = [fileState EXCEPT ![f] = "compressing"]
+    /\ UNCHANGED <<originalExists, compressedExists>>
+
+\* Compression completes successfully — .lz file now exists on disk.
+CompressComplete(w) ==
+    /\ workerState[w] = "compressing"
+    /\ workerFile[w] /= NULL
+    /\ LET f == workerFile[w] IN
+        /\ workerState' = [workerState EXCEPT ![w] = "verifying"]
+        /\ compressedExists' = [compressedExists EXCEPT ![f] = TRUE]
+        /\ UNCHANGED <<fileState, workerFile, originalExists>>
+
+\* Verification succeeds — original can be removed.
+VerifyOutput(w) ==
+    /\ workerState[w] = "verifying"
+    /\ workerFile[w] /= NULL
+    /\ LET f == workerFile[w] IN
+        /\ fileState' = [fileState EXCEPT ![f] = "compressed"]
+        /\ workerState' = [workerState EXCEPT ![w] = "idle"]
+        /\ workerFile' = [workerFile EXCEPT ![w] = NULL]
+        /\ UNCHANGED <<originalExists, compressedExists>>
+
+\* ===========================================================================
+\* Next-State Relation
+\* ===========================================================================
+
+Next ==
+    \/ \E w \in Workers, f \in Files : PickUpFile(w, f)
+    \/ \E w \in Workers : CompressComplete(w)
+    \/ \E w \in Workers : VerifyOutput(w)
 
 Spec == Init /\ [][Next]_vars
 
