@@ -129,16 +129,58 @@ testSelectLayout = do
 
 testListClients : IO ()
 testListClients = do
-  result <- tmuxListClients
-  case result of
-    Left _ => putStrLn "iris-tmux-tests: list-clients: ok (no clients expected)"
-    Right _ => putStrLn "iris-tmux-tests: list-clients: ok"
+  -- ensure a server is running so list-clients succeeds (even if empty)
+  sessionName <- mkSessionName
+  created <- tmuxNewSession sessionName
+  case created of
+    Left err => formatFailure ("listClients: setup failed: " ++ err)
+    Right () => do
+      result <- tmuxListClients
+      _ <- runTmux ["kill-session", "-t", sessionName]
+      case result of
+        Left err => formatFailure ("tmuxListClients failed: " ++ err)
+        Right _ => putStrLn "iris-tmux-tests: list-clients: ok"
 
 testKillServer : IO ()
 testKillServer = do
   -- kill-server is destructive; just verify it compiles and returns Either
   let _ : IO (Either String ()) = tmuxKillServer
   putStrLn "iris-tmux-tests: kill-server: ok (typecheck only)"
+
+testNewWindow : IO ()
+testNewWindow = do
+  sessionName <- mkSessionName
+  created <- tmuxNewSession sessionName
+  case created of
+    Left err => formatFailure ("newWindow: setup failed: " ++ err)
+    Right () => do
+      result <- tmuxNewWindow sessionName "test-win"
+      windows <- tmuxListWindows sessionName
+      _ <- runTmux ["kill-session", "-t", sessionName]
+      case result of
+        Left err => formatFailure ("tmuxNewWindow failed: " ++ err)
+        Right () =>
+          case windows of
+            Left err => formatFailure ("newWindow: list-windows failed: " ++ err)
+            Right output =>
+              if isInfixOf "test-win" output
+                then putStrLn "iris-tmux-tests: new-window: ok"
+                else formatFailure "tmuxNewWindow window name not in list-windows output"
+
+testCapturePaneDepths : IO ()
+testCapturePaneDepths = do
+  sessionName <- mkSessionName
+  created <- tmuxNewSession sessionName
+  case created of
+    Left err => formatFailure ("capturePaneDepths: setup failed: " ++ err)
+    Right () => do
+      visResult <- tmuxCapturePane sessionName VisibleOnly
+      linesResult <- tmuxCapturePane sessionName (Lines 5)
+      _ <- runTmux ["kill-session", "-t", sessionName]
+      case (visResult, linesResult) of
+        (Right _, Right _) => putStrLn "iris-tmux-tests: capture-pane-depths: ok"
+        (Left err, _) => formatFailure ("tmuxCapturePane VisibleOnly failed: " ++ err)
+        (_, Left err) => formatFailure ("tmuxCapturePane Lines failed: " ++ err)
 
 testAttachSession : IO ()
 testAttachSession = do
@@ -223,3 +265,7 @@ main = do
   testListClients
   -- test: tmuxKillServer
   testKillServer
+  -- test: tmuxNewWindow
+  testNewWindow
+  -- test: tmuxCapturePane depth variants
+  testCapturePaneDepths
