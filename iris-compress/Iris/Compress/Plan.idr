@@ -51,3 +51,34 @@ record CompressionPlan where
 public export
 Show CompressionPlan where
   show p = "CompressionPlan [" ++ show (length (actions p)) ++ " actions]"
+
+||| Describe an action for dry-run output.
+public export
+describeAction : Action -> String
+describeAction (CompressRaw u) = "Would compress (raw -> lz): " ++ show u
+describeAction (RecompressZst u) = "Would recompress (zst -> lz): " ++ show u
+describeAction (CleanPartial u) = "Would remove partial: " ++ show u ++ ".lz"
+describeAction (Skip u reason) = "Skipping (" ++ show reason ++ "): " ++ show u
+describeAction (Ignore _) = ""
+
+||| Count actions by type.
+countRaw : List Action -> Nat
+countRaw [] = 0
+countRaw (CompressRaw _ :: rest) = S (countRaw rest)
+countRaw (_ :: rest) = countRaw rest
+
+countZst : List Action -> Nat
+countZst [] = 0
+countZst (RecompressZst _ :: rest) = S (countZst rest)
+countZst (_ :: rest) = countZst rest
+
+||| Generate a summary line for the plan.
+||| "Found N uncompressed + M zst files (T total), using J parallel jobs..."
+public export
+planSummary : CompressionPlan -> Nat -> String
+planSummary plan jobs =
+  let raw = countRaw (actions plan)
+      zst = countZst (actions plan)
+   in "Found " ++ show raw ++ " uncompressed + " ++ show zst
+      ++ " zst files (" ++ show (raw + zst) ++ " total), using "
+      ++ show jobs ++ " parallel jobs..."
