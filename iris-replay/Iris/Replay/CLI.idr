@@ -17,6 +17,7 @@ usage =
   "  search <path> <query>  Search frame payload content\n" ++
   "  info <path>            Print basic frame stats\n" ++
   "  dump <path>            Dump each frame with index, timestamp, length, and content\n" ++
+  "  raw-dump <path>        Dump raw payload bytes to stdout (no metadata or sanitization)\n" ++
   "\n" ++
   "options:\n" ++
   "  --force-decompression=<alg>  Override auto-detection (lzip|gzip|zstd|xz|bzip2|none)"
@@ -24,7 +25,7 @@ usage =
 normalizeArgs : List String -> List String
 normalizeArgs [] = []
 normalizeArgs all@(arg0 :: rest) =
-  if arg0 == "replay" || arg0 == "search" || arg0 == "info" || arg0 == "dump"
+  if arg0 == "replay" || arg0 == "search" || arg0 == "info" || arg0 == "dump" || arg0 == "raw-dump"
        || arg0 == "--help" || arg0 == "-h" || isPrefixOf "--force-decompression=" arg0
     then all
     else rest
@@ -182,6 +183,13 @@ runDump path override = do
     Left err => exitWithMessage (formatParseError err)
     Right frames => printDumpLines 0 frames
 
+runRawDump : String -> Maybe Compression -> IO ()
+runRawDump path override = do
+  result <- replayFile path override
+  case result of
+    Left err => exitWithMessage err
+    Right () => pure ()
+
 runInfo : String -> Maybe Compression -> IO ()
 runInfo path override = do
   decompResult <- decompressFile path override
@@ -231,4 +239,5 @@ main = do
         ["search", path, query] => runSearch path query override
         ["info", path] => runInfo path override
         ["dump", path] => runDump path override
+        ["raw-dump", path] => runRawDump path override
         _ => exitWithMessage usage
