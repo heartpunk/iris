@@ -15,6 +15,22 @@ formatFailure msg = do
   putStrLn ("iris-tmux-tests: FAIL: " ++ msg)
   exitWith (ExitFailure 1)
 
+testListPanes : IO ()
+testListPanes = do
+  sessionName <- mkSessionName
+  created <- tmuxNewSession sessionName
+  case created of
+    Left err => formatFailure ("listPanes: setup failed: " ++ err)
+    Right () => do
+      result <- tmuxListPanes sessionName
+      _ <- runTmux ["kill-session", "-t", sessionName]
+      case result of
+        Left err => formatFailure ("tmuxListPanes failed: " ++ err)
+        Right output =>
+          if length output > 0
+            then putStrLn "iris-tmux-tests: list-panes: ok"
+            else formatFailure "tmuxListPanes returned empty output"
+
 testSelectLayout : IO ()
 testSelectLayout = do
   sessionName <- mkSessionName
@@ -107,6 +123,8 @@ main = do
   testListSessions
   -- test: tmuxAttachSession
   testAttachSession
+  -- test: tmuxListPanes
+  testListPanes
   -- test: tmuxSelectLayout
   testSelectLayout
   -- test: tmuxListClients

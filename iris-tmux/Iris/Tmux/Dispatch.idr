@@ -108,3 +108,7 @@ tmuxSelectLayout : (target : String) -> (layout : String) -> IO (Either String (
 tmuxSelectLayout target layout = do
   result <- runTmux ["select-layout", "-t", target, layout]
   pure (map (const ()) result)
+
+public export
+tmuxListPanes : (target : String) -> IO (Either String String)
+tmuxListPanes target = runTmux ["list-panes", "-t", target]
