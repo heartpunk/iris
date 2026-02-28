@@ -121,3 +121,9 @@ tmuxDisplayMessage target format =
 public export
 tmuxListWindows : (target : String) -> IO (Either String String)
 tmuxListWindows target = runTmux ["list-windows", "-t", target]
+
+public export
+tmuxKillSession : (name : String) -> IO (Either String ())
+tmuxKillSession name = do
+  result <- runTmux ["kill-session", "-t", name]
+  pure (map (const ()) result)
