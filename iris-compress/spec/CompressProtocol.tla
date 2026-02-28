@@ -7,29 +7,29 @@ EXTENDS Naturals, FiniteSets, Sequences
 
 CONSTANTS
     Files,          \* Set of file identifiers
-    Workers         \* Set of worker identifiers
+    Workers,        \* Set of worker identifiers
+    NULL,           \* Sentinel for "no file assigned"
+    MaxRetries      \* Maximum compression attempts per file
 
 \* ===========================================================================
 \* Variables
 \* ===========================================================================
 
 VARIABLES
-    fileState,      \* fileState[f] \in {"raw", "compressing", "verifying",
-                    \*                   "compressed", "failed", "cleaned"}
-    workerState,    \* workerState[w] \in {"idle", "compressing", "verifying"}
-    workerFile,     \* workerFile[w] = file the worker is working on, or NULL
-    originalExists, \* originalExists[f] \in BOOLEAN — original file on disk
-    compressedExists \* compressedExists[f] \in BOOLEAN — .lz file on disk
+    fileState,       \* fileState[f] \in FileStates
+    workerState,     \* workerState[w] \in WorkerStates
+    workerFile,      \* workerFile[w] \in Files \cup {NULL}
+    originalExists,  \* originalExists[f] \in BOOLEAN
+    compressedExists,\* compressedExists[f] \in BOOLEAN
+    retryCount       \* retryCount[f] \in 0..MaxRetries — attempts so far
 
-vars == <<fileState, workerState, workerFile, originalExists, compressedExists>>
-
-CONSTANTS NULL
+vars == <<fileState, workerState, workerFile, originalExists, compressedExists, retryCount>>
 
 \* ===========================================================================
 \* Type Invariant
 \* ===========================================================================
 
-FileStates == {"raw", "compressing", "verifying", "compressed", "failed", "cleaned"}
+FileStates == {"raw", "compressing", "compressed", "failed", "permfailed"}
 WorkerStates == {"idle", "compressing", "verifying"}
 
 TypeInvariant ==
@@ -38,6 +38,7 @@ TypeInvariant ==
     /\ workerFile \in [Workers -> Files \cup {NULL}]
     /\ originalExists \in [Files -> BOOLEAN]
     /\ compressedExists \in [Files -> BOOLEAN]
+    /\ retryCount \in [Files -> 0..MaxRetries]
 
 \* ===========================================================================
 \* Initial State
@@ -49,6 +50,7 @@ Init ==
     /\ workerFile = [w \in Workers |-> NULL]
     /\ originalExists = [f \in Files |-> TRUE]
     /\ compressedExists = [f \in Files |-> FALSE]
+    /\ retryCount = [f \in Files |-> 0]
 
 \* ===========================================================================
 \* Worker Actions
@@ -61,6 +63,7 @@ PickUpFile(w, f) ==
     /\ workerState' = [workerState EXCEPT ![w] = "compressing"]
     /\ workerFile' = [workerFile EXCEPT ![w] = f]
     /\ fileState' = [fileState EXCEPT ![f] = "compressing"]
+    /\ retryCount' = [retryCount EXCEPT ![f] = retryCount[f] + 1]
     /\ UNCHANGED <<originalExists, compressedExists>>
 
 \* Compression completes successfully — .lz file now exists on disk.
@@ -70,7 +73,7 @@ CompressComplete(w) ==
     /\ LET f == workerFile[w] IN
         /\ workerState' = [workerState EXCEPT ![w] = "verifying"]
         /\ compressedExists' = [compressedExists EXCEPT ![f] = TRUE]
-        /\ UNCHANGED <<fileState, workerFile, originalExists>>
+        /\ UNCHANGED <<fileState, workerFile, originalExists, retryCount>>
 
 \* Verification succeeds — original can be removed.
 VerifyOutput(w) ==
@@ -80,42 +83,39 @@ VerifyOutput(w) ==
         /\ fileState' = [fileState EXCEPT ![f] = "compressed"]
         /\ workerState' = [workerState EXCEPT ![w] = "idle"]
         /\ workerFile' = [workerFile EXCEPT ![w] = NULL]
-        /\ UNCHANGED <<originalExists, compressedExists>>
+        /\ UNCHANGED <<originalExists, compressedExists, retryCount>>
 
 \* ===========================================================================
 \* Failure and Cleanup Actions
 \* ===========================================================================
 
 \* Compression or verification fails — worker releases the file.
+\* If retries remain, file goes back to "failed" (eligible for cleanup+retry).
+\* If retries exhausted, file is permanently failed.
 CompressFail(w) ==
     /\ workerState[w] \in {"compressing", "verifying"}
     /\ workerFile[w] /= NULL
     /\ LET f == workerFile[w] IN
-        /\ fileState' = [fileState EXCEPT ![f] = "failed"]
+        /\ IF retryCount[f] >= MaxRetries
+           THEN fileState' = [fileState EXCEPT ![f] = "permfailed"]
+           ELSE fileState' = [fileState EXCEPT ![f] = "failed"]
         /\ workerState' = [workerState EXCEPT ![w] = "idle"]
         /\ workerFile' = [workerFile EXCEPT ![w] = NULL]
-        /\ UNCHANGED <<originalExists, compressedExists>>
+        /\ UNCHANGED <<originalExists, compressedExists, retryCount>>
 
 \* Delete the original file after successful compression and verification.
 DeleteOriginal(f) ==
     /\ fileState[f] = "compressed"
     /\ originalExists[f] = TRUE
     /\ originalExists' = [originalExists EXCEPT ![f] = FALSE]
-    /\ UNCHANGED <<fileState, workerState, workerFile, compressedExists>>
+    /\ UNCHANGED <<fileState, workerState, workerFile, compressedExists, retryCount>>
 
-\* Clean up after a failure: remove partial .lz if it exists, mark cleaned.
-CleanupFailed(f) ==
+\* Clean up partial .lz after a retryable failure, return to raw for retry.
+CleanupAndRetry(f) ==
     /\ fileState[f] = "failed"
     /\ compressedExists' = [compressedExists EXCEPT ![f] = FALSE]
-    /\ fileState' = [fileState EXCEPT ![f] = "cleaned"]
-    /\ UNCHANGED <<workerState, workerFile, originalExists>>
-
-\* A cleaned file can be retried.
-RetryFile(f) ==
-    /\ fileState[f] = "cleaned"
-    /\ originalExists[f] = TRUE
     /\ fileState' = [fileState EXCEPT ![f] = "raw"]
-    /\ UNCHANGED <<workerState, workerFile, originalExists, compressedExists>>
+    /\ UNCHANGED <<workerState, workerFile, originalExists, retryCount>>
 
 \* ===========================================================================
 \* Safety Invariants
@@ -137,6 +137,15 @@ NoDuplicateWork ==
         (w1 /= w2 /\ workerFile[w1] /= NULL)
             => workerFile[w1] /= workerFile[w2]
 
+\* Original is preserved for any file that permanently failed.
+PermFailedPreservesOriginal ==
+    \A f \in Files :
+        fileState[f] = "permfailed" => originalExists[f]
+
+\* Retry count never exceeds the maximum.
+RetryBound ==
+    \A f \in Files : retryCount[f] <= MaxRetries
+
 \* ===========================================================================
 \* Next-State Relation
 \* ===========================================================================
@@ -147,8 +156,7 @@ Next ==
     \/ \E w \in Workers : VerifyOutput(w)
     \/ \E w \in Workers : CompressFail(w)
     \/ \E f \in Files : DeleteOriginal(f)
-    \/ \E f \in Files : CleanupFailed(f)
-    \/ \E f \in Files : RetryFile(f)
+    \/ \E f \in Files : CleanupAndRetry(f)
 
 \* ===========================================================================
 \* Specifications
@@ -156,18 +164,20 @@ Next ==
 
 Spec == Init /\ [][Next]_vars
 
-\* Fair specification: every enabled action eventually occurs.
+\* Fair specification: weak fairness on Next suffices because bounded retries
+\* guarantee natural termination — no infinite cycles possible.
 FairSpec == Init /\ [][Next]_vars /\ WF_vars(Next)
 
 \* ===========================================================================
 \* Liveness Property
 \* ===========================================================================
 
-\* Every file eventually reaches a terminal state (compressed with original
-\* deleted, or failed with partial cleaned).
+\* Every file eventually reaches a terminal state: either successfully
+\* compressed with original deleted, or permanently failed with original
+\* preserved.
 AllFilesProcessed ==
     <>(\A f \in Files :
         \/ (fileState[f] = "compressed" /\ ~originalExists[f])
-        \/ fileState[f] = "cleaned")
+        \/ (fileState[f] = "permfailed" /\ originalExists[f]))
 
 ====
