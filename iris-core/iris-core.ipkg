@@ -13,3 +13,4 @@ modules    = Iris.Core.Session
            , Iris.Core.Layout
            , Iris.Core.Backend
            , Iris.Core.Error
+           , Iris.Core.Parse
