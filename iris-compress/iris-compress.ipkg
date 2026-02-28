@@ -14,3 +14,7 @@ modules    = Iris.Compress.TimeUnit
            , Iris.Compress.Plan
            , Iris.Compress.Execute
            , Iris.Compress.Discovery
+           , Iris.Compress.CLI
+
+main       = Iris.Compress.CLI
+executable = "iris-compress"
