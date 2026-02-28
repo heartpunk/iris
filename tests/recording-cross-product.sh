@@ -128,7 +128,73 @@ make_test_input() {
   printf 'hello from iris recording test\n' > "$output_file"
 }
 
-# --- Tests (added in subsequent commits) ---
+# --- Test: ovh-ttyrec → iris-replay ---
+run_ovh_to_iris_replay() {
+  local tmp_dir="$1"
+  local input_file="$tmp_dir/ovh-input.txt"
+  local ttyrec_file="$tmp_dir/ovh-recording.ttyrec"
+  local payload_file="$tmp_dir/ovh-iris-payload.bin"
+
+  make_test_input "$input_file"
+  record_with_ovh "$input_file" "$ttyrec_file"
+
+  # Verify iris-replay can read the recording
+  local frames
+  frames="$(frame_count_iris_replay "$ttyrec_file")"
+  if [[ -z "$frames" || "$frames" -le 0 ]]; then
+    echo "FAIL ovh-to-iris-replay: iris-replay reports 0 or missing frame count"
+    return 1
+  fi
+
+  # Extract frame 0 payload and verify it contains our input
+  frame_payload_iris_replay "$ttyrec_file" 0 > "$payload_file"
+  local payload_size
+  payload_size="$(wc -c < "$payload_file" | tr -d ' ')"
+  if [[ "$payload_size" -eq 0 ]]; then
+    echo "FAIL ovh-to-iris-replay: frame 0 payload is empty"
+    return 1
+  fi
+
+  # The payload should contain our test string
+  if ! grep -q "hello from iris recording test" "$payload_file"; then
+    echo "FAIL ovh-to-iris-replay: frame 0 payload missing expected content"
+    echo "payload:"
+    xxd -g 1 "$payload_file" | head -5
+    return 1
+  fi
+
+  echo "PASS ovh-to-iris-replay (frames=$frames)"
+  return 0
+}
+
+# --- Test: ovh-ttyrec → ipbt ---
+run_ovh_to_ipbt() {
+  local tmp_dir="$1"
+  local input_file="$tmp_dir/ovh-ipbt-input.txt"
+  local ttyrec_file="$tmp_dir/ovh-ipbt-recording.ttyrec"
+
+  make_test_input "$input_file"
+  record_with_ovh "$input_file" "$ttyrec_file"
+
+  # Verify ipbt can read the recording
+  local frames
+  frames="$(frame_count_ipbt "$ttyrec_file")"
+  if [[ -z "$frames" || "$frames" -le 0 ]]; then
+    echo "FAIL ovh-to-ipbt: ipbt reports 0 or missing frame count"
+    return 1
+  fi
+
+  # Cross-check: iris-replay should agree on frame count
+  local iris_frames
+  iris_frames="$(frame_count_iris_replay "$ttyrec_file")"
+  if [[ "$frames" -ne "$iris_frames" ]]; then
+    echo "FAIL ovh-to-ipbt: frame count mismatch ipbt=$frames iris=$iris_frames"
+    return 1
+  fi
+
+  echo "PASS ovh-to-ipbt (frames=$frames)"
+  return 0
+}
 
 # --- Main ---
 main() {
@@ -139,7 +205,14 @@ main() {
 
   case "$selected_test" in
     "")
-      echo "no tests yet — skeleton only"
+      run_ovh_to_iris_replay "$tmp_dir" || failures=$((failures + 1))
+      run_ovh_to_ipbt "$tmp_dir" || failures=$((failures + 1))
+      ;;
+    "ovh-to-iris-replay")
+      run_ovh_to_iris_replay "$tmp_dir" || failures=$((failures + 1))
+      ;;
+    "ovh-to-ipbt")
+      run_ovh_to_ipbt "$tmp_dir" || failures=$((failures + 1))
       ;;
     *)
       echo "unknown test: $selected_test" >&2
