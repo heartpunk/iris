@@ -259,6 +259,46 @@ normalize_output() {
     "$input" > "$output.tmp" && mv "$output.tmp" "$output"
 }
 
+# ============================================================
+# Comparison infrastructure
+# ============================================================
+
+# Compare two screen state files byte-for-byte with diagnostic output.
+# Args: $1 = file A, $2 = file B, $3 = label
+compare_screens() {
+  local a="$1"
+  local b="$2"
+  local label="${3:-comparison}"
+  local size_a size_b
+
+  size_a="$(wc -c < "$a" | tr -d ' ')"
+  size_b="$(wc -c < "$b" | tr -d ' ')"
+  echo "  $label: A=$size_a bytes, B=$size_b bytes"
+
+  if cmp -s "$a" "$b"; then
+    echo "  $label: MATCH"
+    return 0
+  fi
+
+  diff_bytes_count "$a" "$b"
+
+  echo "  --- A (first 5 lines hex) ---"
+  xxd -g 1 "$a" | head -5
+  echo "  --- B (first 5 lines hex) ---"
+  xxd -g 1 "$b" | head -5
+  return 1
+}
+
+# Count number of differing bytes between two files.
+# Args: $1 = file A, $2 = file B
+diff_bytes_count() {
+  local a="$1"
+  local b="$2"
+  local count
+  count="$(cmp -l "$a" "$b" 2>/dev/null | wc -l | tr -d ' ')"
+  echo "  differing bytes: $count"
+}
+
 # --- Main (tests added in subsequent commits) ---
 main() {
   tmp_dir="$(mktemp -d /tmp/iris-cross-backend.XXXXXX)"
