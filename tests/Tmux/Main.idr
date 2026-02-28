@@ -15,6 +15,22 @@ formatFailure msg = do
   putStrLn ("iris-tmux-tests: FAIL: " ++ msg)
   exitWith (ExitFailure 1)
 
+testDisplayMessage : IO ()
+testDisplayMessage = do
+  sessionName <- mkSessionName
+  created <- tmuxNewSession sessionName
+  case created of
+    Left err => formatFailure ("displayMessage: setup failed: " ++ err)
+    Right () => do
+      result <- tmuxDisplayMessage sessionName "#{session_name}"
+      _ <- runTmux ["kill-session", "-t", sessionName]
+      case result of
+        Left err => formatFailure ("tmuxDisplayMessage failed: " ++ err)
+        Right output =>
+          if isInfixOf sessionName output
+            then putStrLn "iris-tmux-tests: display-message: ok"
+            else formatFailure ("tmuxDisplayMessage output missing session name, got: " ++ output)
+
 testListPanes : IO ()
 testListPanes = do
   sessionName <- mkSessionName
@@ -123,6 +139,8 @@ main = do
   testListSessions
   -- test: tmuxAttachSession
   testAttachSession
+  -- test: tmuxDisplayMessage
+  testDisplayMessage
   -- test: tmuxListPanes
   testListPanes
   -- test: tmuxSelectLayout

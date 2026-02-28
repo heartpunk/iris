@@ -112,3 +112,8 @@ tmuxSelectLayout target layout = do
 public export
 tmuxListPanes : (target : String) -> IO (Either String String)
 tmuxListPanes target = runTmux ["list-panes", "-t", target]
+
+public export
+tmuxDisplayMessage : (target : String) -> (format : String) -> IO (Either String String)
+tmuxDisplayMessage target format =
+  runTmux ["display-message", "-t", target, "-p", format]
