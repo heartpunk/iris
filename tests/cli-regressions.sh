@@ -523,10 +523,12 @@ run_empty_file() {
   local search_output="$tmp_dir/empty-search-output.txt"
   local info_output="$tmp_dir/empty-info-output.txt"
   local dump_output="$tmp_dir/empty-dump-output.txt"
+  local raw_dump_output="$tmp_dir/empty-raw-dump-output.bin"
   local replay_status
   local search_status
   local info_status
   local dump_status
+  local raw_dump_status
   local replay_size
 
   : > "$empty_file"
@@ -540,6 +542,8 @@ run_empty_file() {
   info_status=$?
   "$IRIS_REPLAY_BIN" dump "$empty_file" > "$dump_output" 2>&1
   dump_status=$?
+  "$IRIS_REPLAY_BIN" raw-dump "$empty_file" > "$raw_dump_output" 2>&1
+  raw_dump_status=$?
   set -e
 
   if [[ "$replay_status" -ne 0 ]]; then
@@ -598,6 +602,20 @@ run_empty_file() {
     return 1
   fi
 
+  if [[ "$raw_dump_status" -ne 0 ]]; then
+    echo "FAIL empty-file raw-dump exited with $raw_dump_status"
+    xxd -g 1 "$raw_dump_output"
+    return 1
+  fi
+
+  local raw_dump_size
+  raw_dump_size="$(wc -c < "$raw_dump_output" | tr -d ' ')"
+  if [[ "$raw_dump_size" -ne 0 ]]; then
+    echo "FAIL empty-file raw-dump produced output"
+    xxd -g 1 "$raw_dump_output"
+    return 1
+  fi
+
   echo "PASS empty-file"
   return 0
 }
@@ -617,6 +635,8 @@ run_exit_codes() {
   local replay_info_status=$?
   "$IRIS_REPLAY_BIN" dump "$tmp_dir/does-not-exist.ttyrec" >/dev/null 2>&1
   local replay_dump_status=$?
+  "$IRIS_REPLAY_BIN" raw-dump "$tmp_dir/does-not-exist.ttyrec" >/dev/null 2>&1
+  local replay_raw_dump_status=$?
   "$IRIS_REC_BIN" >/dev/null 2>&1
   local rec_usage_status=$?
   "$IRIS_REC_BIN" record >/dev/null 2>&1
@@ -656,6 +676,13 @@ run_exit_codes() {
     failures=$((failures + 1))
   else
     echo "PASS exit-codes replay-dump-missing-file"
+  fi
+
+  if [[ "$replay_raw_dump_status" -eq 0 ]]; then
+    echo "FAIL exit-codes replay-raw-dump-missing-file returned 0"
+    failures=$((failures + 1))
+  else
+    echo "PASS exit-codes replay-raw-dump-missing-file"
   fi
 
   if [[ "$rec_usage_status" -eq 0 ]]; then
