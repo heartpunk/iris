@@ -299,6 +299,67 @@ diff_bytes_count() {
   echo "  differing bytes: $count"
 }
 
+# ============================================================
+# Baseline management
+# ============================================================
+
+# Save a screen state file as a baseline.
+# Args: $1 = scenario name, $2 = backend (tmux|native), $3 = source file
+save_baseline() {
+  local scenario="$1"
+  local backend="$2"
+  local source="$3"
+  mkdir -p "$BASELINES_DIR"
+  cp "$source" "$BASELINES_DIR/${scenario}.${backend}.txt"
+  echo "  saved baseline: ${scenario}.${backend}.txt ($(wc -c < "$source" | tr -d ' ') bytes)"
+}
+
+# Get baseline file path (does not check existence).
+# Args: $1 = scenario name, $2 = backend (tmux|native)
+# Outputs: file path to stdout
+baseline_path() {
+  local scenario="$1"
+  local backend="$2"
+  echo "$BASELINES_DIR/${scenario}.${backend}.txt"
+}
+
+# Three-way comparison: PASS / BASELINE / REGRESSION / FAIL.
+# Args: $1 = scenario name, $2 = tmux screen file, $3 = native screen file
+compare_to_baseline() {
+  local scenario="$1"
+  local tmux_screen="$2"
+  local native_screen="$3"
+  local tmux_baseline native_baseline
+
+  tmux_baseline="$(baseline_path "$scenario" tmux)"
+  native_baseline="$(baseline_path "$scenario" native)"
+
+  # If iris-native replay matches tmux replay: PASS
+  if cmp -s "$tmux_screen" "$native_screen"; then
+    echo "PASS $scenario (native matches tmux)"
+    return 0
+  fi
+
+  # If iris-native replay matches known broken baseline: BASELINE (expected)
+  if [[ -f "$native_baseline" ]] && cmp -s "$native_baseline" "$native_screen"; then
+    echo "BASELINE $scenario (native matches known broken baseline)"
+    return 0
+  fi
+
+  # If there's a known baseline but native doesn't match it: REGRESSION
+  if [[ -f "$native_baseline" ]]; then
+    echo "REGRESSION $scenario (native differs from both tmux and known baseline)"
+    compare_screens "$native_baseline" "$native_screen" "vs known baseline"
+    compare_screens "$tmux_screen" "$native_screen" "vs tmux gold"
+    return 1
+  fi
+
+  # No baseline exists yet — this is a new scenario
+  echo "FAIL $scenario (no baseline — run with --update-baselines)"
+  compare_screens "$tmux_screen" "$native_screen" "vs tmux gold"
+  return 1
+}
+
 # --- Main (tests added in subsequent commits) ---
 main() {
   tmp_dir="$(mktemp -d /tmp/iris-cross-backend.XXXXXX)"
