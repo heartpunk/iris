@@ -3,6 +3,8 @@ module Compress.Main
 import Iris.Compress.TimeUnit
 import Iris.Compress.UUID
 import Iris.Compress.FileClass
+import Iris.Compress.Plan
+import Data.String
 import System
 
 -- Takes an equality proof; always True at runtime.
@@ -372,6 +374,49 @@ propertyClassifyPreservesUUID seedNat =
            AlreadyCompressed v => uuid v == u
            _ => False
 
+-- ==========================================================================
+-- Plan property tests
+-- ==========================================================================
+
+-- Property: describeAction on CompressRaw is non-empty and contains "Would".
+propertyDescribeRaw : Nat -> Bool
+propertyDescribeRaw seedNat =
+  let (u, _) = genUUID (cast seedNat)
+   in case validateUUID u of
+        Just v  => length (describeAction (CompressRaw v)) > 0
+        Nothing => False
+
+-- Property: describeAction on Ignore is always empty.
+propertyDescribeIgnore : Nat -> Bool
+propertyDescribeIgnore seedNat =
+  let (u, _) = genUUID (cast seedNat)
+   in describeAction (Ignore u) == ""
+
+-- Property: planSummary counts match the action list composition.
+propertyPlanSummaryCount : Nat -> Bool
+propertyPlanSummaryCount seedNat =
+  let seed = cast seedNat
+      (u1, s1) = genUUID seed
+      (u2, s2) = genUUID s1
+      (u3, _) = genUUID s2
+   in case (validateUUID u1, validateUUID u2, validateUUID u3) of
+        (Just v1, Just v2, Just v3) =>
+          let plan = MkPlan [CompressRaw v1, RecompressZst v2, Skip v3 TooRecent]
+              summary = planSummary plan 4
+           in isInfixOf "1 uncompressed" summary
+              && isInfixOf "1 zst" summary
+              && isInfixOf "2 total" summary
+              && isInfixOf "4 parallel" summary
+        _ => False
+
+-- Property: empty plan summary shows zeros.
+propertyEmptyPlanSummary : Bool
+propertyEmptyPlanSummary =
+  let summary = planSummary (MkPlan []) 8
+   in isInfixOf "0 uncompressed" summary
+      && isInfixOf "0 zst" summary
+      && isInfixOf "0 total" summary
+
 public export
 main : IO ()
 main = do
@@ -454,12 +499,22 @@ main = do
   classifyUUID <- runPure "property/classify-preserves-uuid-200-seeds"
     (propertyMany propertyClassifyPreservesUUID rounds)
 
+  describeRaw <- runPure "property/describe-raw-200-seeds"
+    (propertyMany propertyDescribeRaw rounds)
+  describeIgnore <- runPure "property/describe-ignore-200-seeds"
+    (propertyMany propertyDescribeIgnore rounds)
+  planCount <- runPure "property/plan-summary-count-200-seeds"
+    (propertyMany propertyPlanSummaryCount rounds)
+  emptyPlan <- runPure "unit/empty-plan-summary"
+    propertyEmptyPlanSummary
+
   let failures = timeUnitProofs + parseTimeUnitProofs + parseDurationUnits
         + roundtrip + monotonicity + zeroDur + bareMinutes
         + uuidUnits + hexCharProofs
         + fileClassUnits
         + genValid + validateRt + nonHexRej
         + classifyRaw + classifyZst + classifyLz + classifyUUID
+        + describeRaw + describeIgnore + planCount + emptyPlan
   putStrLn ("failures: " ++ show failures)
   if failures == 0
     then pure ()
