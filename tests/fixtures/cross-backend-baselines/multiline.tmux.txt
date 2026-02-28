@@ -1,0 +1,8 @@
+$ echo line1
+line1
+$ echo line2
+line2
+$ echo line3
+line3
+$ exit
+exit

@@ -438,6 +438,10 @@ run_simple_echo() {
   run_scenario "simple-echo" "echo hello" "$1"
 }
 
+run_multiline() {
+  run_scenario "multiline" "$(printf 'echo line1\necho line2\necho line3')" "$1"
+}
+
 # --- Main ---
 main() {
   tmp_dir="$(mktemp -d /tmp/iris-cross-backend.XXXXXX)"
@@ -450,9 +454,13 @@ main() {
   case "$selected_test" in
     "")
       run_simple_echo "$tmp_dir" || failures=$((failures + 1))
+      run_multiline "$tmp_dir" || failures=$((failures + 1))
       ;;
     "simple-echo")
       run_simple_echo "$tmp_dir" || failures=$((failures + 1))
+      ;;
+    "multiline")
+      run_multiline "$tmp_dir" || failures=$((failures + 1))
       ;;
     *)
       echo "unknown test: $selected_test" >&2
