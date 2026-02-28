@@ -136,7 +136,7 @@ fi
 # Build subcommand lookup file (bash 3 compatible, avoids associative arrays)
 SUBCMD_FILE="${TMPDIR:-/tmp}/tmux-commands-subcmds.$$"
 TSV_BATCH_FILE="${TMPDIR:-/tmp}/tmux-commands-batch.$$.tsv"
-trap 'rm -f "$SUBCMD_FILE" "$TSV_BATCH_FILE"' EXIT
+trap 'rm -f "$SUBCMD_FILE" "$TSV_BATCH_FILE" "${TMPDIR:-/tmp}/tmux-commands-err.$$"' EXIT
 printf '%s\n' "${KNOWN_SUBCOMMANDS[@]}" > "$SUBCMD_FILE"
 
 is_known_subcmd() {
@@ -187,7 +187,8 @@ for file in "${files[@]}"; do
   # Clear batch file for this recording
   : > "$TSV_BATCH_FILE"
 
-  # Dump frames and filter for tmux mentions
+  # Dump frames, capturing stderr to detect failures
+  dump_err="${TMPDIR:-/tmp}/tmux-commands-err.$$"
   while IFS= read -r line; do
     # Parse: frame=N ts=T len=L payload=P
     if [[ ! "$line" =~ ^frame=([0-9]+)\ ts=([^ ]+)\ len=[0-9]+\ payload=(.*)$ ]]; then
@@ -249,9 +250,15 @@ for file in "${files[@]}"; do
         "$base" "$frame_num" "$ts" "$tsv_cmd" "$subcmd" "$tsv_fullsub" >> "$TSV_BATCH_FILE"
 
       file_matches=$((file_matches + 1))
-    done < <(printf '%s' "$payload" | grep -oE 'tmux( +-[A-Za-z0-9]+)*( +[a-z][-a-z]+)( +-[A-Za-z]+ +[^ ]+| +-[A-Za-z]+| +[a-zA-Z][-a-zA-Z./~_]*)*' || true)
+    done < <(printf '%s' "$payload" | grep -oE 'tmux( +-[A-Za-z0-9]+)*( +[a-z][-a-z]*)( +-[A-Za-z]+ +[^ ]+| +-[A-Za-z]+| +[a-zA-Z][-a-zA-Z./~_]*)*' || true)
 
-  done < <("$IRIS_REPLAY" dump "$file" 2>/dev/null | grep -i 'tmux' || true)
+  done < <("$IRIS_REPLAY" dump "$file" 2>"$dump_err" | grep -i 'tmux' || true)
+
+  # Count failures from iris-replay stderr
+  if [[ -s "$dump_err" ]]; then
+    failures=$((failures + 1))
+  fi
+  rm -f "$dump_err"
 
   # Batch import for this file via staging table (avoids SQL escaping issues)
   if [[ -s "$TSV_BATCH_FILE" ]]; then
