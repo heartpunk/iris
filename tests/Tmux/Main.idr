@@ -15,6 +15,20 @@ formatFailure msg = do
   putStrLn ("iris-tmux-tests: FAIL: " ++ msg)
   exitWith (ExitFailure 1)
 
+testSelectLayout : IO ()
+testSelectLayout = do
+  sessionName <- mkSessionName
+  created <- tmuxNewSession sessionName
+  case created of
+    Left err => formatFailure ("selectLayout: setup failed: " ++ err)
+    Right () => do
+      _ <- tmuxSplitWindow sessionName
+      result <- tmuxSelectLayout sessionName "even-horizontal"
+      _ <- runTmux ["kill-session", "-t", sessionName]
+      case result of
+        Left err => formatFailure ("tmuxSelectLayout failed: " ++ err)
+        Right () => putStrLn "iris-tmux-tests: select-layout: ok"
+
 testListClients : IO ()
 testListClients = do
   result <- tmuxListClients
@@ -93,6 +107,8 @@ main = do
   testListSessions
   -- test: tmuxAttachSession
   testAttachSession
+  -- test: tmuxSelectLayout
+  testSelectLayout
   -- test: tmuxListClients
   testListClients
   -- test: tmuxKillServer

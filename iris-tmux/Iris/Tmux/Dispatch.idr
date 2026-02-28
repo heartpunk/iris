@@ -102,3 +102,9 @@ tmuxKillServer = map (map (const ())) (runTmux ["kill-server"])
 public export
 tmuxListClients : IO (Either String String)
 tmuxListClients = runTmux ["list-clients"]
+
+public export
+tmuxSelectLayout : (target : String) -> (layout : String) -> IO (Either String ())
+tmuxSelectLayout target layout = do
+  result <- runTmux ["select-layout", "-t", target, layout]
+  pure (map (const ()) result)
