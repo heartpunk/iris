@@ -763,6 +763,8 @@ run_compressed_roundtrip() {
   local info_lz="$tmp_dir/comp-info-lz.txt"
   local dump_raw="$tmp_dir/comp-dump-raw.txt"
   local dump_lz="$tmp_dir/comp-dump-lz.txt"
+  local raw_dump_raw="$tmp_dir/comp-raw-dump-raw.bin"
+  local raw_dump_lz="$tmp_dir/comp-raw-dump-lz.bin"
 
   printf 'hello needle world\n' > "$payload_file"
   make_single_frame_ttyrec "$payload_file" "$ttyrec_file" 17 420
@@ -773,11 +775,13 @@ run_compressed_roundtrip() {
   "$IRIS_REPLAY_BIN" search "$ttyrec_file" "needle" > "$search_raw"
   "$IRIS_REPLAY_BIN" info "$ttyrec_file" > "$info_raw"
   "$IRIS_REPLAY_BIN" dump "$ttyrec_file" > "$dump_raw"
+  "$IRIS_REPLAY_BIN" raw-dump "$ttyrec_file" 0 > "$raw_dump_raw"
 
   "$IRIS_REPLAY_BIN" replay "$lz_file" > "$replay_lz"
   "$IRIS_REPLAY_BIN" search "$lz_file" "needle" > "$search_lz"
   "$IRIS_REPLAY_BIN" info "$lz_file" > "$info_lz"
   "$IRIS_REPLAY_BIN" dump "$lz_file" > "$dump_lz"
+  "$IRIS_REPLAY_BIN" raw-dump "$lz_file" 0 > "$raw_dump_lz"
 
   if ! cmp -s "$replay_raw" "$replay_lz"; then
     echo "FAIL compressed-roundtrip replay output differs"
@@ -796,6 +800,11 @@ run_compressed_roundtrip() {
 
   if ! cmp -s "$dump_raw" "$dump_lz"; then
     echo "FAIL compressed-roundtrip dump output differs"
+    return 1
+  fi
+
+  if ! cmp -s "$raw_dump_raw" "$raw_dump_lz"; then
+    echo "FAIL compressed-roundtrip raw-dump output differs"
     return 1
   fi
 
