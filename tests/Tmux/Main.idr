@@ -143,9 +143,10 @@ testListClients = do
 
 testKillServer : IO ()
 testKillServer = do
-  -- kill-server is destructive; just verify it compiles and returns Either
-  let _ : IO (Either String ()) = tmuxKillServer
-  putStrLn "iris-tmux-tests: kill-server: ok (typecheck only)"
+  result <- tmuxKillServer
+  case result of
+    Left err => formatFailure ("tmuxKillServer failed: " ++ err)
+    Right () => putStrLn "iris-tmux-tests: kill-server: ok"
 
 testNewWindow : IO ()
 testNewWindow = do
@@ -263,9 +264,9 @@ main = do
   testSelectLayout
   -- test: tmuxListClients
   testListClients
-  -- test: tmuxKillServer
-  testKillServer
   -- test: tmuxNewWindow
   testNewWindow
   -- test: tmuxCapturePane depth variants
   testCapturePaneDepths
+  -- test: tmuxKillServer (must be last — tears down the server)
+  testKillServer
