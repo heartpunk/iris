@@ -23,6 +23,30 @@ durationEq Nothing Nothing = True
 durationEq (Just a) (Just b) = value a == value b && unit a == unit b
 durationEq _ _ = False
 
+-- LCG random number generator (same as iris-tests).
+lcgModulus : Integer
+lcgModulus = 4294967296
+
+nextSeed : Integer -> Integer
+nextSeed seed = (1664525 * seed + 1013904223) `mod` lcgModulus
+
+randomNat : Integer -> (Nat, Integer)
+randomNat seed =
+  let s = nextSeed seed
+   in (cast (s `mod` 10000), s)
+
+-- Pick a TimeUnit from a seed (0-4 -> one of five units).
+pickUnit : Integer -> (TimeUnit, Integer)
+pickUnit seed =
+  let s = nextSeed seed
+      idx = s `mod` 5
+   in (case idx of
+         0 => Seconds
+         1 => Minutes
+         2 => Hours
+         3 => Days
+         _ => Weeks, s)
+
 -- ==========================================================================
 -- TimeUnit computed proofs (compile-time verified)
 -- ==========================================================================
@@ -95,6 +119,42 @@ unitParseDurationNoDigits = durationEq (parseDuration "m") Nothing
 unitParseDurationBadSuffix : Bool
 unitParseDurationBadSuffix = durationEq (parseDuration "5x") Nothing
 
+-- ==========================================================================
+-- TimeUnit property tests
+-- ==========================================================================
+
+-- Property: parseDuration roundtrip — show then parse recovers the duration.
+propertyParseDurationRoundtrip : Nat -> Bool
+propertyParseDurationRoundtrip seedNat =
+  let seed = cast seedNat
+      (n, s1) = randomNat seed
+      (tu, _) = pickUnit s1
+      dur = MkDuration n tu
+      rendered = show dur
+   in durationEq (parseDuration rendered) (Just dur)
+
+-- Property: larger units produce more seconds for the same value (n > 0).
+propertyMonotonicity : Nat -> Bool
+propertyMonotonicity seedNat =
+  let (n, _) = randomNat (cast seedNat)
+      n1 = S n  -- ensure n > 0
+   in toSeconds (MkDuration n1 Seconds) <= toSeconds (MkDuration n1 Minutes)
+      && toSeconds (MkDuration n1 Minutes) <= toSeconds (MkDuration n1 Hours)
+      && toSeconds (MkDuration n1 Hours) <= toSeconds (MkDuration n1 Days)
+      && toSeconds (MkDuration n1 Days) <= toSeconds (MkDuration n1 Weeks)
+
+-- Property: toSeconds (MkDuration 0 unit) == 0 for any unit.
+propertyZeroDuration : Nat -> Bool
+propertyZeroDuration seedNat =
+  let (tu, _) = pickUnit (cast seedNat)
+   in toSeconds (MkDuration 0 tu) == 0
+
+-- Property: bare number (no suffix) is treated as minutes.
+propertyBareIsMinutes : Nat -> Bool
+propertyBareIsMinutes seedNat =
+  let (n, _) = randomNat (cast seedNat)
+   in durationEq (parseDuration (show n)) (Just (MkDuration n Minutes))
+
 public export
 main : IO ()
 main = do
@@ -123,7 +183,18 @@ main = do
       && unitParseDurationNoDigits
       && unitParseDurationBadSuffix)
 
+  let rounds = 199
+  roundtrip <- runPure "property/parse-duration-roundtrip-200-seeds"
+    (propertyMany propertyParseDurationRoundtrip rounds)
+  monotonicity <- runPure "property/time-unit-monotonicity-200-seeds"
+    (propertyMany propertyMonotonicity rounds)
+  zeroDur <- runPure "property/zero-duration-200-seeds"
+    (propertyMany propertyZeroDuration rounds)
+  bareMinutes <- runPure "property/bare-is-minutes-200-seeds"
+    (propertyMany propertyBareIsMinutes rounds)
+
   let failures = timeUnitProofs + parseTimeUnitProofs + parseDurationUnits
+        + roundtrip + monotonicity + zeroDur + bareMinutes
   putStrLn ("failures: " ++ show failures)
   if failures == 0
     then pure ()
