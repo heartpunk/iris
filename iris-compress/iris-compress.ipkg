@@ -8,3 +8,4 @@ depends    = base
            , iris-core
 
 modules    = Iris.Compress.TimeUnit
+           , Iris.Compress.UUID
