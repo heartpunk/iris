@@ -15,6 +15,20 @@ formatFailure msg = do
   putStrLn ("iris-tmux-tests: FAIL: " ++ msg)
   exitWith (ExitFailure 1)
 
+testHasSession : IO ()
+testHasSession = do
+  sessionName <- mkSessionName
+  created <- tmuxNewSession sessionName
+  case created of
+    Left err => formatFailure ("hasSession: setup failed: " ++ err)
+    Right () => do
+      exists <- tmuxHasSession sessionName
+      _ <- runTmux ["kill-session", "-t", sessionName]
+      gone <- tmuxHasSession sessionName
+      if exists && not gone
+        then putStrLn "iris-tmux-tests: has-session: ok"
+        else formatFailure ("tmuxHasSession: exists=" ++ show exists ++ " gone=" ++ show gone)
+
 testKillSession : IO ()
 testKillSession = do
   sessionName <- mkSessionName
@@ -172,6 +186,8 @@ main = do
   testListSessions
   -- test: tmuxAttachSession
   testAttachSession
+  -- test: tmuxHasSession
+  testHasSession
   -- test: tmuxKillSession
   testKillSession
   -- test: tmuxListWindows

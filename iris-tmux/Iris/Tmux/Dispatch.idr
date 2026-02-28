@@ -1,5 +1,6 @@
 module Iris.Tmux.Dispatch
 
+import Data.Either
 import Data.String
 import System.File.Process
 import System.File.ReadWrite
@@ -127,3 +128,9 @@ tmuxKillSession : (name : String) -> IO (Either String ())
 tmuxKillSession name = do
   result <- runTmux ["kill-session", "-t", name]
   pure (map (const ()) result)
+
+public export
+tmuxHasSession : (name : String) -> IO Bool
+tmuxHasSession name = do
+  result <- runTmux ["has-session", "-t", name]
+  pure (isRight result)
