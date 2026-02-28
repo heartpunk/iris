@@ -24,6 +24,16 @@ export
 showCursor : String
 showCursor = "\ESC[?25h"
 
+||| ANSI escape: enter alternate screen buffer.
+export
+enterAltScreen : String
+enterAltScreen = "\ESC[?1049h"
+
+||| ANSI escape: exit alternate screen buffer.
+export
+exitAltScreen : String
+exitAltScreen = "\ESC[?1049l"
+
 ||| Pad or truncate a string to exactly n characters.
 padOrTruncate : Nat -> String -> String
 padOrTruncate n s =

@@ -78,16 +78,15 @@ serveMode = do
       -- Install signal handlers
       _ <- signalSetup
 
-      -- Clear screen
-      putStr clearScreen
+      -- Enter alternate screen buffer and clear
+      putStr (enterAltScreen ++ clearScreen)
 
       -- Run event loop
       eventLoop stRef
 
       -- Restore terminal on exit
       _ <- restoreTerminal
-      putStr (showCursor ++ clearScreen)
-      putStrLn "iris-native: exited"
+      putStr (exitAltScreen ++ showCursor)
 
 ||| Command mode: send a command to a running iris-native instance.
 commandMode : List String -> IO ()
