@@ -3,6 +3,7 @@ module Iris.Replay.CLI
 import Data.Buffer
 import Data.String
 import Iris.Core.Frame
+import Iris.Core.Parse
 import Iris.Replay.Decompress
 import Iris.Replay.Replay
 import Iris.Replay.Search
@@ -182,21 +183,6 @@ runDump path override = do
   case parsed of
     Left err => exitWithMessage (formatParseError err)
     Right frames => printDumpLines 0 frames
-
-public export
-parseNat : String -> Maybe Nat
-parseNat s =
-  case unpack s of
-    [] => Nothing
-    chars => foldl step (Just 0) chars
-  where
-    step : Maybe Nat -> Char -> Maybe Nat
-    step Nothing _ = Nothing
-    step (Just acc) ch =
-      let d = the Int (ord ch - ord '0')
-       in if d >= 0 && d < 10
-            then Just (acc * 10 + cast d)
-            else Nothing
 
 public export
 frameAt : Nat -> List Frame -> Maybe Frame

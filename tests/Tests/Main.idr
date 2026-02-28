@@ -2,6 +2,7 @@ module Tests.Main
 
 import Data.Buffer
 import Iris.Core.Frame
+import Iris.Core.Parse
 import Iris.Rec.Ttyrec.Write
 import Iris.Replay.CLI
 import Iris.Replay.Replay
