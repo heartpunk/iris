@@ -225,6 +225,83 @@ run_iris_rec_to_ipbt() {
   return 0
 }
 
+# --- Test: cross-tool agreement ---
+# Record the same input with both tools, read with both readers,
+# verify all 4 combinations agree on frame count and payload content.
+run_cross_tool_agreement() {
+  local tmp_dir="$1"
+  local input_file="$tmp_dir/cross-input.txt"
+  local ovh_ttyrec="$tmp_dir/cross-ovh.ttyrec"
+  local iris_ttyrec="$tmp_dir/cross-iris.ttyrec"
+  local ovh_payload="$tmp_dir/cross-ovh-payload.bin"
+  local iris_payload="$tmp_dir/cross-iris-payload.bin"
+
+  make_test_input "$input_file"
+  record_with_ovh "$input_file" "$ovh_ttyrec"
+  record_with_iris_rec "$input_file" "$iris_ttyrec"
+
+  # Read frame counts with both readers for both recordings
+  local ovh_iris_frames ovh_ipbt_frames iris_iris_frames iris_ipbt_frames
+  ovh_iris_frames="$(frame_count_iris_replay "$ovh_ttyrec")"
+  ovh_ipbt_frames="$(frame_count_ipbt "$ovh_ttyrec")"
+  iris_iris_frames="$(frame_count_iris_replay "$iris_ttyrec")"
+  iris_ipbt_frames="$(frame_count_ipbt "$iris_ttyrec")"
+
+  # Both readers should agree on each recording's frame count
+  if [[ "$ovh_iris_frames" -ne "$ovh_ipbt_frames" ]]; then
+    echo "FAIL cross-tool-agreement: ovh recording frame count mismatch iris=$ovh_iris_frames ipbt=$ovh_ipbt_frames"
+    return 1
+  fi
+
+  if [[ "$iris_iris_frames" -ne "$iris_ipbt_frames" ]]; then
+    echo "FAIL cross-tool-agreement: iris-rec recording frame count mismatch iris=$iris_iris_frames ipbt=$iris_ipbt_frames"
+    return 1
+  fi
+
+  # Both recordings should have at least 1 frame
+  if [[ "$ovh_iris_frames" -le 0 ]]; then
+    echo "FAIL cross-tool-agreement: ovh recording has 0 frames"
+    return 1
+  fi
+
+  if [[ "$iris_iris_frames" -le 0 ]]; then
+    echo "FAIL cross-tool-agreement: iris-rec recording has 0 frames"
+    return 1
+  fi
+
+  # Extract frame 0 payloads from both recordings via iris-replay
+  frame_payload_iris_replay "$ovh_ttyrec" 0 > "$ovh_payload"
+  frame_payload_iris_replay "$iris_ttyrec" 0 > "$iris_payload"
+
+  # Both payloads should contain our test string
+  if ! grep -q "hello from iris recording test" "$ovh_payload"; then
+    echo "FAIL cross-tool-agreement: ovh frame 0 missing expected content"
+    echo "ovh payload:"
+    xxd -g 1 "$ovh_payload" | head -5
+    return 1
+  fi
+
+  if ! grep -q "hello from iris recording test" "$iris_payload"; then
+    echo "FAIL cross-tool-agreement: iris-rec frame 0 missing expected content"
+    echo "iris payload:"
+    xxd -g 1 "$iris_payload" | head -5
+    return 1
+  fi
+
+  # Payloads should match byte-for-byte (same input → same recorded bytes)
+  if ! cmp -s "$ovh_payload" "$iris_payload"; then
+    echo "FAIL cross-tool-agreement: frame 0 payloads differ between recorders"
+    echo "ovh payload ($(wc -c < "$ovh_payload" | tr -d ' ') bytes):"
+    xxd -g 1 "$ovh_payload" | head -5
+    echo "iris payload ($(wc -c < "$iris_payload" | tr -d ' ') bytes):"
+    xxd -g 1 "$iris_payload" | head -5
+    return 1
+  fi
+
+  echo "PASS cross-tool-agreement (ovh_frames=$ovh_iris_frames iris_frames=$iris_iris_frames payload_match=yes)"
+  return 0
+}
+
 # --- Main ---
 main() {
   tmp_dir="$(mktemp -d /tmp/iris-recording-cross-product.XXXXXX)"
@@ -237,6 +314,7 @@ main() {
       run_ovh_to_iris_replay "$tmp_dir" || failures=$((failures + 1))
       run_ovh_to_ipbt "$tmp_dir" || failures=$((failures + 1))
       run_iris_rec_to_ipbt "$tmp_dir" || failures=$((failures + 1))
+      run_cross_tool_agreement "$tmp_dir" || failures=$((failures + 1))
       ;;
     "ovh-to-iris-replay")
       run_ovh_to_iris_replay "$tmp_dir" || failures=$((failures + 1))
@@ -246,6 +324,9 @@ main() {
       ;;
     "iris-rec-to-ipbt")
       run_iris_rec_to_ipbt "$tmp_dir" || failures=$((failures + 1))
+      ;;
+    "cross-tool-agreement")
+      run_cross_tool_agreement "$tmp_dir" || failures=$((failures + 1))
       ;;
     *)
       echo "unknown test: $selected_test" >&2
