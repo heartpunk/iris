@@ -98,3 +98,7 @@ tmuxAttachSession name = do
 public export
 tmuxKillServer : IO (Either String ())
 tmuxKillServer = map (map (const ())) (runTmux ["kill-server"])
+
+public export
+tmuxListClients : IO (Either String String)
+tmuxListClients = runTmux ["list-clients"]

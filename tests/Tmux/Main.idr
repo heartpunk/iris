@@ -15,6 +15,13 @@ formatFailure msg = do
   putStrLn ("iris-tmux-tests: FAIL: " ++ msg)
   exitWith (ExitFailure 1)
 
+testListClients : IO ()
+testListClients = do
+  result <- tmuxListClients
+  case result of
+    Left _ => putStrLn "iris-tmux-tests: list-clients: ok (no clients expected)"
+    Right _ => putStrLn "iris-tmux-tests: list-clients: ok"
+
 testKillServer : IO ()
 testKillServer = do
   -- kill-server is destructive; just verify it compiles and returns Either
@@ -86,5 +93,7 @@ main = do
   testListSessions
   -- test: tmuxAttachSession
   testAttachSession
+  -- test: tmuxListClients
+  testListClients
   -- test: tmuxKillServer
   testKillServer
