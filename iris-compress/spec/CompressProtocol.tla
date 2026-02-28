@@ -147,6 +147,18 @@ RetryBound ==
     \A f \in Files : retryCount[f] <= MaxRetries
 
 \* ===========================================================================
+\* Termination
+\* ===========================================================================
+
+\* All files in terminal state, all workers idle — program is done.
+Done ==
+    /\ \A f \in Files : fileState[f] \in {"compressed", "permfailed"}
+    /\ \A f \in Files :
+        fileState[f] = "compressed" => ~originalExists[f]
+    /\ \A w \in Workers : workerState[w] = "idle"
+    /\ UNCHANGED vars
+
+\* ===========================================================================
 \* Next-State Relation
 \* ===========================================================================
 
@@ -157,6 +169,7 @@ Next ==
     \/ \E w \in Workers : CompressFail(w)
     \/ \E f \in Files : DeleteOriginal(f)
     \/ \E f \in Files : CleanupAndRetry(f)
+    \/ Done
 
 \* ===========================================================================
 \* Specifications
