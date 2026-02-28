@@ -360,7 +360,85 @@ compare_to_baseline() {
   return 1
 }
 
-# --- Main (tests added in subsequent commits) ---
+# ============================================================
+# Generic scenario runner
+# ============================================================
+
+run_scenario() {
+  local scenario="$1"
+  local commands="$2"
+  local tmp_dir="$3"
+  local tmux_screen="$tmp_dir/${scenario}-tmux-screen.bin"
+  local native_screen="$tmp_dir/${scenario}-native-screen.bin"
+  local tmux_recording="$tmp_dir/${scenario}-tmux.ttyrec"
+  local native_recording="$tmp_dir/${scenario}-native.ttyrec"
+
+  # --- Tmux gold standard ---
+  if [[ "$native_only" != "true" ]]; then
+    run_tmux_scenario "$scenario" "$tmp_dir" "$commands"
+
+    if [[ ! -f "$tmux_recording" ]]; then
+      echo "FAIL $scenario: tmux recording not produced"
+      return 1
+    fi
+
+    replay_to_screen "$tmux_recording" "$tmux_screen"
+    normalize_output "$tmux_screen" "$tmux_screen"
+
+    if [[ "$update_baselines" == "true" ]]; then
+      save_baseline "$scenario" tmux "$tmux_screen"
+    fi
+  else
+    local bl
+    bl="$(baseline_path "$scenario" tmux)"
+    if [[ ! -f "$bl" ]]; then
+      echo "FAIL $scenario: no tmux baseline (run without --native-only first)"
+      return 1
+    fi
+    tmux_screen="$bl"
+  fi
+
+  # --- Tmux-only mode ---
+  if [[ "$tmux_only" == "true" ]]; then
+    local frames
+    frames="$("$IRIS_REPLAY_BIN" info "$tmux_recording" 2>&1 | awk '/^frames:/ {print $2}')"
+    echo "TMUX-ONLY $scenario: recorded $frames frames, replayed $(wc -c < "$tmux_screen" | tr -d ' ') bytes"
+    return 0
+  fi
+
+  # --- Skip native if binary not available ---
+  if [[ "$has_native" != "true" ]]; then
+    echo "SKIP $scenario (iris-native not built)"
+    return 0
+  fi
+
+  run_native_scenario "$scenario" "$tmp_dir" "$commands"
+
+  if [[ ! -f "$native_recording" ]]; then
+    echo "FAIL $scenario: native recording not produced"
+    return 1
+  fi
+
+  replay_to_screen "$native_recording" "$native_screen"
+  normalize_output "$native_screen" "$native_screen"
+
+  if [[ "$update_baselines" == "true" ]]; then
+    save_baseline "$scenario" native "$native_screen"
+  fi
+
+  # --- Compare ---
+  compare_to_baseline "$scenario" "$tmux_screen" "$native_screen"
+}
+
+# ============================================================
+# Scenario definitions
+# ============================================================
+
+run_simple_echo() {
+  run_scenario "simple-echo" "echo hello" "$1"
+}
+
+# --- Main ---
 main() {
   tmp_dir="$(mktemp -d /tmp/iris-cross-backend.XXXXXX)"
   trap 'rm -rf "$tmp_dir"' EXIT
@@ -371,7 +449,10 @@ main() {
 
   case "$selected_test" in
     "")
-      echo "no scenarios yet — skeleton only"
+      run_simple_echo "$tmp_dir" || failures=$((failures + 1))
+      ;;
+    "simple-echo")
+      run_simple_echo "$tmp_dir" || failures=$((failures + 1))
       ;;
     *)
       echo "unknown test: $selected_test" >&2
