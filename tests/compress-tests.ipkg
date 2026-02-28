@@ -1,0 +1,14 @@
+package compress-tests
+
+authors    = "heartpunk"
+brief      = "Tests for iris-compress"
+version    = 0.1.0
+
+depends    = base
+           , iris-core
+           , iris-compress
+
+modules    = Compress.Main
+
+main       = Compress.Main
+executable = "compress-tests"
