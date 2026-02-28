@@ -2,6 +2,7 @@ module Iris.Replay.Decompress
 
 import Data.Buffer
 import Data.String
+import Iris.Core.Parse
 import System
 import System.File
 import System.File.Buffer
@@ -80,14 +81,6 @@ decompressCmd Zstd = "zstd -d -c"
 decompressCmd Xz = "xz -d -c"
 decompressCmd Bzip2 = "bzip2 -d -c"
 decompressCmd Uncompressed = ""
-
-escapeSingleQuoted : List Char -> String
-escapeSingleQuoted [] = ""
-escapeSingleQuoted ('\'' :: rest) = "'\\''" ++ escapeSingleQuoted rest
-escapeSingleQuoted (ch :: rest) = strCons ch "" ++ escapeSingleQuoted rest
-
-quoteArg : String -> String
-quoteArg arg = "'" ++ escapeSingleQuoted (unpack arg) ++ "'"
 
 readMagicList : Buffer -> Int -> Int -> IO (List Bits8)
 readMagicList buffer idx count =
