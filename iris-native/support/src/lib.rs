@@ -1,3 +1,4 @@
+pub mod fifo;
 pub mod poll;
 pub mod pty;
 pub mod signal;
