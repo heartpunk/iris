@@ -1,0 +1,8 @@
+package iris-compress
+
+authors    = "heartpunk"
+brief      = "Ttyrec compression tool for Iris"
+version    = 0.1.0
+
+depends    = base
+           , iris-core
