@@ -151,6 +151,24 @@ Next ==
     \/ \E f \in Files : CleanupFailed(f)
     \/ \E f \in Files : RetryFile(f)
 
+\* ===========================================================================
+\* Specifications
+\* ===========================================================================
+
 Spec == Init /\ [][Next]_vars
+
+\* Fair specification: every enabled action eventually occurs.
+FairSpec == Init /\ [][Next]_vars /\ WF_vars(Next)
+
+\* ===========================================================================
+\* Liveness Property
+\* ===========================================================================
+
+\* Every file eventually reaches a terminal state (compressed with original
+\* deleted, or failed with partial cleaned).
+AllFilesProcessed ==
+    <>(\A f \in Files :
+        \/ (fileState[f] = "compressed" /\ ~originalExists[f])
+        \/ fileState[f] = "cleaned")
 
 ====
