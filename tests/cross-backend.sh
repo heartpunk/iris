@@ -30,10 +30,10 @@ TERM_ROWS=24
 
 usage() {
   cat <<'EOF'
-Usage: tests/cross-backend.sh [--test simple-echo|multiline|ls-colors|prompt-basic|cat-binary] [--update-baselines] [--tmux-only] [--native-only]
+Usage: tests/cross-backend.sh [--test simple-echo|multiline|ls-colors|prompt-basic|cat-binary|cross-product] [--update-baselines] [--tmux-only] [--native-only]
 
 Options:
-  --test NAME          Run a single test scenario
+  --test NAME          Run a single test scenario (or 'cross-product')
   --update-baselines   Re-record and save baseline files
   --tmux-only          Only run tmux gold standard (skip iris-native)
   --native-only        Only run iris-native (skip tmux, compare to baselines)
@@ -525,6 +525,82 @@ run_cat_binary() {
   run_scenario "cat-binary" "$(printf "printf '\\\\x00\\\\x01\\\\x80\\\\xff'")" "$1"
 }
 
+# ============================================================
+# End-to-end cross-product validation
+# ============================================================
+# For each scenario × backend, verify:
+#   ovh-ttyrec recording readable by iris-replay AND ipbt (agree on frame count)
+#   iris-rec re-recording readable by iris-replay AND ipbt (agree on frame count)
+# Reports full matrix as a table.
+
+run_cross_product() {
+  local tmp_dir="$1"
+  local scenarios="simple-echo multiline ls-colors prompt-basic cat-binary"
+  local backends="tmux native"
+  local xval_failures=0
+  local xval_total=0
+
+  echo "=== Cross-product validation: scenario × backend × recorder × reader ==="
+
+  # First run all scenarios to produce recordings
+  for scenario in $scenarios; do
+    "run_${scenario//-/_}" "$tmp_dir" >/dev/null 2>&1 || true
+  done
+
+  # Now validate each recording
+  for scenario in $scenarios; do
+    for backend in $backends; do
+      local recording="$tmp_dir/${scenario}-${backend}.ttyrec"
+      if [[ ! -f "$recording" ]]; then
+        echo "  SKIP $scenario/$backend (no recording)"
+        continue
+      fi
+
+      xval_total=$((xval_total + 1))
+
+      # Read with both readers
+      local ovh_iris ovh_ipbt
+      ovh_iris="$(frame_count_iris_replay "$recording")"
+      ovh_ipbt="$(frame_count_ipbt "$recording")"
+
+      if [[ "$ovh_iris" -ne "$ovh_ipbt" ]]; then
+        echo "  FAIL $scenario/$backend/ovh-ttyrec: iris=$ovh_iris ipbt=$ovh_ipbt MISMATCH"
+        xval_failures=$((xval_failures + 1))
+      else
+        echo "  OK   $scenario/$backend/ovh-ttyrec: $ovh_iris frames (both readers agree)"
+      fi
+
+      # Re-record through iris-rec
+      local raw_stream="$tmp_dir/${scenario}-${backend}-xp-raw.bin"
+      local iris_ttyrec="$tmp_dir/${scenario}-${backend}-xp-iris.ttyrec"
+      "$IRIS_REPLAY_BIN" replay "$recording" > "$raw_stream" 2>/dev/null || true
+      "$IRIS_REC_BIN" record "$iris_ttyrec" < "$raw_stream" >/dev/null 2>&1 || true
+
+      if [[ -f "$iris_ttyrec" ]]; then
+        xval_total=$((xval_total + 1))
+
+        local iris_iris iris_ipbt
+        iris_iris="$(frame_count_iris_replay "$iris_ttyrec")"
+        iris_ipbt="$(frame_count_ipbt "$iris_ttyrec")"
+
+        if [[ "$iris_iris" -ne "$iris_ipbt" ]]; then
+          echo "  FAIL $scenario/$backend/iris-rec: iris=$iris_iris ipbt=$iris_ipbt MISMATCH"
+          xval_failures=$((xval_failures + 1))
+        else
+          echo "  OK   $scenario/$backend/iris-rec: $iris_iris frames (both readers agree)"
+        fi
+      fi
+    done
+  done
+
+  echo "=== Cross-product: $((xval_total - xval_failures))/$xval_total passed ==="
+
+  if [[ "$xval_failures" -gt 0 ]]; then
+    return 1
+  fi
+  return 0
+}
+
 # --- Main ---
 main() {
   tmp_dir="$(mktemp -d /tmp/iris-cross-backend.XXXXXX)"
@@ -556,6 +632,9 @@ main() {
       ;;
     "cat-binary")
       run_cat_binary "$tmp_dir" || failures=$((failures + 1))
+      ;;
+    "cross-product")
+      run_cross_product "$tmp_dir" || failures=$((failures + 1))
       ;;
     *)
       echo "unknown test: $selected_test" >&2
