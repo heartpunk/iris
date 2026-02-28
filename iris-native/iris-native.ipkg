@@ -15,6 +15,7 @@ modules    = Iris.Native.Backend
            , Iris.Native.EventLoop
            , Iris.Native.FFI.Poll
            , Iris.Native.FFI.Pty
+           , Iris.Native.FFI.RawIO
            , Iris.Native.FFI.Terminal
            , Iris.Native.Main
            , Iris.Native.Render
