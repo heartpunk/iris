@@ -4,6 +4,7 @@ import Data.Buffer
 import Iris.Core.Frame
 import Iris.Rec.Ttyrec.Write
 import Iris.Replay.CLI
+import Iris.Replay.Replay
 import Iris.Replay.Ttyrec.Parse
 import System
 import System.File.Buffer
@@ -286,6 +287,20 @@ propertyBinaryTransparencyAllBytes =
         Right [parsed] => payload parsed == allByteValues
         Right _ => False
 
+-- Reference implementation: naive left-to-right payload concatenation.
+-- Used to verify collectPayloads' double-reverse accumulation idiom.
+concatPayloads : List Frame -> List Bits8
+concatPayloads [] = []
+concatPayloads (frame :: rest) = payload frame ++ concatPayloads rest
+
+-- Property: collectPayloads == naive concatenation of payloads for any frame list.
+propertyCollectPayloadsConcat : Nat -> Bool
+propertyCollectPayloadsConcat seedNat =
+  let seed = cast seedNat
+      frameCount = frameCountForSeed seed
+      (frames, _) = generateFrames frameCount seed
+   in collectPayloads frames == concatPayloads frames
+
 readBufferBytes : Buffer -> Int -> IO (List Bits8)
 readBufferBytes buffer size = go 0 []
   where
@@ -324,6 +339,27 @@ propertyWriteFidelity = do
           case onDisk of
             Left _ => pure False
             Right bytes => pure (bytes == expected)
+
+-- Property: parse a written ttyrec, then collectPayloads == expected payload concat.
+-- Covers the parse -> collectPayloads pipeline that raw-dump relies on.
+rawDumpRoundtripPath : String
+rawDumpRoundtripPath = "/tmp/iris-replay-raw-dump-roundtrip.ttyrec"
+
+propertyRawDumpRoundtrip : IO Bool
+propertyRawDumpRoundtrip = do
+  let frame1 = MkFrame 1 100 allByteValues
+      frame2 = MkFrame 2 200 [toByte 0, toByte 255, toByte 128]
+      frames = [frame1, frame2]
+      expected = concatPayloads frames
+  wrote <- writeTtyrec rawDumpRoundtripPath frames
+  case wrote of
+    Left _ => pure False
+    Right () => do
+      parsed <- parseFile rawDumpRoundtripPath Nothing
+      case parsed of
+        Left _ => pure False
+        Right parsedFrames =>
+          pure (collectPayloads parsedFrames == expected)
 
 propertyRoundtripSeed : Nat -> Bool
 propertyRoundtripSeed seedNat =
@@ -436,13 +472,16 @@ runPropertySuite rounds = do
   binaryTransparency <- runPure
                           "property/binary-transparency-all-bytes"
                           propertyBinaryTransparencyAllBytes
+  collectConcat <- runPure
+                     ("property/collect-payloads-concat-" ++ show rounds ++ "-seeds")
+                     (propertyMany propertyCollectPayloadsConcat limit)
   writeFidelity <- runIO
                      "property/write-fidelity-disk-vs-encode"
                      propertyWriteFidelity
 
   pure
     (frameCount + leRoundtrip + leOutOfRange + ordering + payloadLen + headerBytes
-      + sizeLaw + concatLaw + binaryTransparency + writeFidelity)
+      + sizeLaw + concatLaw + binaryTransparency + collectConcat + writeFidelity)
 
 runPropertyOnly : Nat -> IO ()
 runPropertyOnly rounds = do
@@ -468,11 +507,12 @@ runDefaultSuite = do
   roundtrip <- runPure "property/roundtrip-iris-rec-replay-200-seeds" (propertyRoundtripMany 199)
   prop <- runPropertySuite 200
   writeRoundtrip <- runIO "roundtrip/write-file-then-parse" writerRoundtripFile
+  rawDumpRoundtrip <- runIO "roundtrip/raw-dump-parse-collect-payloads" propertyRawDumpRoundtrip
   integ <- runIO "integration/fixture-parse" integrationRealFile
 
   let failures =
         unit1 + unit2 + unit3 + unit4 + unit5 + unit6 + unit7
-          + roundtrip + prop + writeRoundtrip + integ
+          + roundtrip + prop + writeRoundtrip + rawDumpRoundtrip + integ
   putStrLn ("failures: " ++ show failures)
 
   if failures == 0

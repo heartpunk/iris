@@ -39,6 +39,7 @@ collectPayloadsReversed [] acc = acc
 collectPayloadsReversed (frame :: rest) acc =
   collectPayloadsReversed rest (prependBytes (payload frame) acc)
 
+public export
 collectPayloads : List Frame -> List Bits8
 collectPayloads frames = reverse (collectPayloadsReversed frames [])
 
