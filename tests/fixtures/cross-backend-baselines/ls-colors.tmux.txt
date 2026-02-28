@@ -1,0 +1,5 @@
+$ ls --color=always /
+[0m[01;34mApplications[0m  [01;34mSystem[0m  [01;34mVolumes[0m  [01;34mcores[0m  [01;36metc[0m   [01;34mnix[0m  [01;34mprivate[0m  [01;34msbin[0m  [01;34musr[0m
+[01;34mLibrary[0m       [01;34mUsers[0m   [01;34mbin[0m      [01;34mdev[0m    [01;36mhome[0m  [01;34mopt[0m  [01;36mrun[0m      [01;36mtmp[0m   [01;36mvar[0m
+$ exit
+exit
