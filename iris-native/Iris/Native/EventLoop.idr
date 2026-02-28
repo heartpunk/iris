@@ -7,6 +7,7 @@ import Data.String
 import Iris.Native.Command
 import Iris.Native.FFI.Poll
 import Iris.Native.FFI.Pty
+import Iris.Native.FFI.RawIO
 import Iris.Native.FFI.Terminal
 import Iris.Native.Render
 import Iris.Native.State
@@ -15,6 +16,10 @@ import System.File.ReadWrite
 ||| Read buffer size for PTY reads.
 readBufSize : Int
 readBufSize = 4096
+
+||| Poll timeout in milliseconds. Short enough to check signals promptly.
+pollTimeoutMs : Int
+pollTimeoutMs = 100
 
 ||| Find a pane by ID in the pane list.
 findPane : Nat -> List PaneState -> Maybe PaneState
@@ -96,6 +101,49 @@ setupPoll st = do
               else pure (-1)
   pure (stdinIdx, paneIdxs, ctlIdx)
 
+||| Single iteration of the raw byte pump for single-pane mode.
+||| Bypasses String conversion entirely — uses stdinToFd / fdToStdout
+||| for byte-transparent passthrough.
+singlePaneLoopOnce : IORef MuxState -> Buffer -> IO ()
+singlePaneLoopOnce stRef buf = do
+  st <- readIORef stRef
+  case st.panes of
+    [pane] => do
+      if pane.closed
+        then modifyIORef stRef (\s => { running := False } s)
+        else do
+          pollClear
+          stdinIdx <- pollAdd 0
+          ptyIdx <- pollAdd pane.ptyFd
+          nReady <- pollWait pollTimeoutMs
+          when (nReady > 0) $ do
+            -- stdin → PTY master (raw bytes)
+            stdinReady <- pollReadable stdinIdx
+            when stdinReady $ do
+              n <- stdinToFd buf readBufSize pane.ptyFd
+              when (n <= 0) $
+                modifyIORef stRef (\s => { running := False } s)
+            -- PTY master → stdout (raw bytes)
+            ptyReady <- pollReadable ptyIdx
+            ptyErr <- pollError ptyIdx
+            when ptyErr $
+              modifyIORef stRef (\s => { panes := updatePane pane.paneId
+                (\p => { closed := True } p) s.panes } s)
+            when (ptyReady && not ptyErr) $ do
+              n <- fdToStdout buf readBufSize pane.ptyFd
+              when (n <= 0) $
+                modifyIORef stRef (\s => { panes := updatePane pane.paneId
+                  (\p => { closed := True } p) s.panes } s)
+    _ => pure ()  -- unreachable: eventLoop dispatches multi-pane separately
+
+||| Single-pane event loop: raw byte pump until pane exits.
+singlePaneLoop : IORef MuxState -> Buffer -> IO ()
+singlePaneLoop stRef buf = do
+  st <- readIORef stRef
+  when st.running $ do
+    singlePaneLoopOnce stRef buf
+    singlePaneLoop stRef buf
+
 ||| Single iteration of the event loop.
 export
 loopOnce : IORef MuxState -> IO ()
@@ -103,7 +151,7 @@ loopOnce stRef = do
   st <- readIORef stRef
   (stdinIdx, paneIdxs, ctlIdx) <- setupPoll st
 
-  nReady <- pollWait (-1)
+  nReady <- pollWait pollTimeoutMs
   when (nReady > 0) $ do
     -- Check stdin: forward to active pane's PTY
     stdinReady <- pollReadable stdinIdx
@@ -155,11 +203,23 @@ loopOnce stRef = do
     when (output /= "") $ putStr output
     modifyIORef stRef (\s => { panes := clearDirty s.panes } s)
 
-||| Main event loop: runs until state.running is False.
+||| Main event loop: dispatches to single-pane raw byte pump or
+||| multi-pane mux loop based on pane count.
 export
 eventLoop : IORef MuxState -> IO ()
 eventLoop stRef = do
   st <- readIORef stRef
-  when st.running $ do
-    loopOnce stRef
-    eventLoop stRef
+  case st.panes of
+    [_] => do
+      -- Single pane: allocate buffer once, use raw byte pump
+      Just buf <- newBuffer readBufSize
+        | Nothing => pure ()  -- allocation failed, bail
+      singlePaneLoop stRef buf
+    _   => multiPaneLoop stRef
+  where
+    multiPaneLoop : IORef MuxState -> IO ()
+    multiPaneLoop ref = do
+      s <- readIORef ref
+      when s.running $ do
+        loopOnce ref
+        multiPaneLoop ref
