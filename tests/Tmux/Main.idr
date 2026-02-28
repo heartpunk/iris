@@ -15,6 +15,22 @@ formatFailure msg = do
   putStrLn ("iris-tmux-tests: FAIL: " ++ msg)
   exitWith (ExitFailure 1)
 
+testListSessions : IO ()
+testListSessions = do
+  sessionName <- mkSessionName
+  created <- tmuxNewSession sessionName
+  case created of
+    Left err => formatFailure ("listSessions: setup failed: " ++ err)
+    Right () => do
+      result <- tmuxListSessions
+      _ <- runTmux ["kill-session", "-t", sessionName]
+      case result of
+        Left err => formatFailure ("tmuxListSessions failed: " ++ err)
+        Right output =>
+          if isInfixOf sessionName output
+            then putStrLn "iris-tmux-tests: list-sessions: ok"
+            else formatFailure "tmuxListSessions output missing session name"
+
 main : IO ()
 main = do
   sessionName <- mkSessionName
@@ -45,7 +61,7 @@ main = do
                               then Right ()
                               else Left "capture output missing \"hello\""
       case (captureValidated, killed) of
-        (Right (), Right _) => putStrLn "iris-tmux-tests: ok"
+        (Right (), Right _) => putStrLn "iris-tmux-tests: capture-pane: ok"
         (Left captureErr, Right _) =>
           formatFailure captureErr
         (Right _, Left killErr) =>
@@ -53,3 +69,5 @@ main = do
         (Left captureErr, Left killErr) =>
           formatFailure
             (captureErr ++ "; cleanup failed: " ++ killErr)
+  -- test: tmuxListSessions
+  testListSessions

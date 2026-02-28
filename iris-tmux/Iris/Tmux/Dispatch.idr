@@ -84,3 +84,7 @@ tmuxSendKeys target keys = do
   case result of
     Left err => pure (Left err)
     Right _ => pure (Right ())
+
+public export
+tmuxListSessions : IO (Either String String)
+tmuxListSessions = runTmux ["list-sessions"]
