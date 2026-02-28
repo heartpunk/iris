@@ -82,6 +82,31 @@ pub unsafe extern "C" fn iris_pty_close(fd: c_int) -> c_int {
     libc::close(fd)
 }
 
+/// Read raw bytes from stdin (fd 0) into buf. Returns bytes read, 0 on EOF, -1 on error.
+/// Unlike `iris_pty_read`, this always reads from STDIN_FILENO.
+#[no_mangle]
+pub unsafe extern "C" fn iris_stdin_read(buf: *mut u8, len: usize) -> isize {
+    libc::read(libc::STDIN_FILENO, buf as *mut libc::c_void, len)
+}
+
+/// Write raw bytes to stdout (fd 1). Returns bytes written, -1 on error.
+/// Unlike `iris_pty_write`, this always writes to STDOUT_FILENO.
+#[no_mangle]
+pub unsafe extern "C" fn iris_stdout_write(buf: *const u8, len: usize) -> isize {
+    libc::write(libc::STDOUT_FILENO, buf as *const libc::c_void, len)
+}
+
+/// Non-blocking waitpid. Returns:
+///   > 0: child exited (returns pid)
+///   0: child still running
+///   -1: error (e.g. no such child)
+#[no_mangle]
+pub unsafe extern "C" fn iris_waitpid_nohang(pid: pid_t) -> c_int {
+    let mut status: c_int = 0;
+    let result = libc::waitpid(pid, &mut status, libc::WNOHANG);
+    result as c_int
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -126,6 +151,47 @@ mod tests {
             libc::kill(pid, libc::SIGTERM);
             iris_pty_close(master);
             libc::waitpid(pid, ptr::null_mut(), 0);
+        }
+    }
+
+    #[test]
+    fn test_stdout_write_byte_fidelity() {
+        unsafe {
+            // Write escape sequences and high bytes to stdout — should write all bytes
+            let data: &[u8] = &[0x1b, b'[', b'3', b'1', b'm', 0x80, 0xff, 0x00, 0x01];
+            let written = iris_stdout_write(data.as_ptr(), data.len());
+            assert_eq!(
+                written,
+                data.len() as isize,
+                "should write all bytes including escapes and high bytes"
+            );
+        }
+    }
+
+    #[test]
+    fn test_waitpid_nohang_running_child() {
+        unsafe {
+            // Fork a child that sleeps
+            let pid = libc::fork();
+            assert!(pid >= 0, "fork should succeed");
+
+            if pid == 0 {
+                // Child: sleep briefly then exit
+                libc::usleep(500_000);
+                libc::_exit(0);
+            }
+
+            // Parent: child should still be running
+            let result = iris_waitpid_nohang(pid);
+            assert_eq!(result, 0, "running child should return 0");
+
+            // Kill and reap
+            libc::kill(pid, libc::SIGTERM);
+            libc::waitpid(pid, ptr::null_mut(), 0);
+
+            // After reap, waitpid_nohang should return -1 (no such child)
+            let result2 = iris_waitpid_nohang(pid);
+            assert_eq!(result2, -1, "reaped child should return -1");
         }
     }
 
