@@ -1,6 +1,7 @@
 module Compress.Main
 
 import Iris.Compress.TimeUnit
+import Iris.Compress.UUID
 import System
 
 -- Takes an equality proof; always True at runtime.
@@ -155,6 +156,61 @@ propertyBareIsMinutes seedNat =
   let (n, _) = randomNat (cast seedNat)
    in durationEq (parseDuration (show n)) (Just (MkDuration n Minutes))
 
+-- ==========================================================================
+-- UUID unit tests
+-- (isUUIDFormat uses unpack which may not reduce at compile time)
+-- ==========================================================================
+
+unitUUIDValid : Bool
+unitUUIDValid = isUUIDFormat "550e8400-e29b-41d4-a716-446655440000" == True
+
+unitUUIDAllZeros : Bool
+unitUUIDAllZeros = isUUIDFormat "00000000-0000-0000-0000-000000000000" == True
+
+unitUUIDAllF : Bool
+unitUUIDAllF = isUUIDFormat "ffffffff-ffff-ffff-ffff-ffffffffffff" == True
+
+unitUUIDUppercase : Bool
+unitUUIDUppercase = isUUIDFormat "550E8400-E29B-41D4-A716-446655440000" == False
+
+unitUUIDTooShort : Bool
+unitUUIDTooShort = isUUIDFormat "550e8400-e29b-41d4-a716" == False
+
+unitUUIDNoHyphens : Bool
+unitUUIDNoHyphens = isUUIDFormat "550e8400e29b41d4a716446655440000" == False
+
+unitUUIDExtraChars : Bool
+unitUUIDExtraChars = isUUIDFormat "550e8400-e29b-41d4-a716-446655440000x" == False
+
+unitUUIDEmpty : Bool
+unitUUIDEmpty = isUUIDFormat "" == False
+
+unitUUIDValidateValid : Bool
+unitUUIDValidateValid = case validateUUID "550e8400-e29b-41d4-a716-446655440000" of
+  Just v  => uuid v == "550e8400-e29b-41d4-a716-446655440000"
+  Nothing => False
+
+unitUUIDValidateInvalid : Bool
+unitUUIDValidateInvalid = case validateUUID "not-a-uuid" of
+  Just _  => False
+  Nothing => True
+
+-- isHexChar compile-time proofs (simple character comparison reduces fine).
+proofHexCharDigit : isHexChar '0' = True
+proofHexCharDigit = Refl
+
+proofHexCharA : isHexChar 'a' = True
+proofHexCharA = Refl
+
+proofHexCharF : isHexChar 'f' = True
+proofHexCharF = Refl
+
+proofHexCharUpperA : isHexChar 'A' = False
+proofHexCharUpperA = Refl
+
+proofHexCharG : isHexChar 'g' = False
+proofHexCharG = Refl
+
 public export
 main : IO ()
 main = do
@@ -193,8 +249,27 @@ main = do
   bareMinutes <- runPure "property/bare-is-minutes-200-seeds"
     (propertyMany propertyBareIsMinutes rounds)
 
+  uuidUnits <- runPure "unit/uuid-format-cases"
+    (unitUUIDValid
+      && unitUUIDAllZeros
+      && unitUUIDAllF
+      && unitUUIDUppercase
+      && unitUUIDTooShort
+      && unitUUIDNoHyphens
+      && unitUUIDExtraChars
+      && unitUUIDEmpty
+      && unitUUIDValidateValid
+      && unitUUIDValidateInvalid)
+  hexCharProofs <- runPure "proof/is-hex-char"
+    (isProven proofHexCharDigit
+      && isProven proofHexCharA
+      && isProven proofHexCharF
+      && isProven proofHexCharUpperA
+      && isProven proofHexCharG)
+
   let failures = timeUnitProofs + parseTimeUnitProofs + parseDurationUnits
         + roundtrip + monotonicity + zeroDur + bareMinutes
+        + uuidUnits + hexCharProofs
   putStrLn ("failures: " ++ show failures)
   if failures == 0
     then pure ()
