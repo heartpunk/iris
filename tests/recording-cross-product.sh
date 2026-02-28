@@ -196,6 +196,35 @@ run_ovh_to_ipbt() {
   return 0
 }
 
+# --- Test: iris-rec → ipbt ---
+run_iris_rec_to_ipbt() {
+  local tmp_dir="$1"
+  local input_file="$tmp_dir/iris-rec-ipbt-input.txt"
+  local ttyrec_file="$tmp_dir/iris-rec-ipbt-recording.ttyrec"
+
+  make_test_input "$input_file"
+  record_with_iris_rec "$input_file" "$ttyrec_file"
+
+  # Verify ipbt can read the iris-rec recording
+  local frames
+  frames="$(frame_count_ipbt "$ttyrec_file")"
+  if [[ -z "$frames" || "$frames" -le 0 ]]; then
+    echo "FAIL iris-rec-to-ipbt: ipbt reports 0 or missing frame count"
+    return 1
+  fi
+
+  # Cross-check: iris-replay should agree
+  local iris_frames
+  iris_frames="$(frame_count_iris_replay "$ttyrec_file")"
+  if [[ "$frames" -ne "$iris_frames" ]]; then
+    echo "FAIL iris-rec-to-ipbt: frame count mismatch ipbt=$frames iris=$iris_frames"
+    return 1
+  fi
+
+  echo "PASS iris-rec-to-ipbt (frames=$frames)"
+  return 0
+}
+
 # --- Main ---
 main() {
   tmp_dir="$(mktemp -d /tmp/iris-recording-cross-product.XXXXXX)"
@@ -207,12 +236,16 @@ main() {
     "")
       run_ovh_to_iris_replay "$tmp_dir" || failures=$((failures + 1))
       run_ovh_to_ipbt "$tmp_dir" || failures=$((failures + 1))
+      run_iris_rec_to_ipbt "$tmp_dir" || failures=$((failures + 1))
       ;;
     "ovh-to-iris-replay")
       run_ovh_to_iris_replay "$tmp_dir" || failures=$((failures + 1))
       ;;
     "ovh-to-ipbt")
       run_ovh_to_ipbt "$tmp_dir" || failures=$((failures + 1))
+      ;;
+    "iris-rec-to-ipbt")
+      run_iris_rec_to_ipbt "$tmp_dir" || failures=$((failures + 1))
       ;;
     *)
       echo "unknown test: $selected_test" >&2
