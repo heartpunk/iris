@@ -88,3 +88,9 @@ tmuxSendKeys target keys = do
 public export
 tmuxListSessions : IO (Either String String)
 tmuxListSessions = runTmux ["list-sessions"]
+
+public export
+tmuxAttachSession : (name : String) -> IO (Either String ())
+tmuxAttachSession name = do
+  result <- runTmux ["attach-session", "-t", name]
+  pure (map (const ()) result)

@@ -15,6 +15,13 @@ formatFailure msg = do
   putStrLn ("iris-tmux-tests: FAIL: " ++ msg)
   exitWith (ExitFailure 1)
 
+testAttachSession : IO ()
+testAttachSession = do
+  result <- tmuxAttachSession "iris-nonexistent-session"
+  case result of
+    Left _ => putStrLn "iris-tmux-tests: attach-session: ok"
+    Right () => formatFailure "tmuxAttachSession should fail for nonexistent session"
+
 testListSessions : IO ()
 testListSessions = do
   sessionName <- mkSessionName
@@ -71,3 +78,5 @@ main = do
             (captureErr ++ "; cleanup failed: " ++ killErr)
   -- test: tmuxListSessions
   testListSessions
+  -- test: tmuxAttachSession
+  testAttachSession
