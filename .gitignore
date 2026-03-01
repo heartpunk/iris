@@ -4,3 +4,4 @@ iris-core/build/
 iris-replay/build/
 **/build/
 iris-native/support/target/
+result
